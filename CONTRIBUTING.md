@@ -5,7 +5,7 @@ Thanks for your interest in contributing to Securo! This guide will help you get
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/finanseu.git`
+2. Clone your fork: `git clone https://github.com/your-username/securo.git`
 3. Start the stack: `docker compose up --build`
 4. Open [http://localhost:3000](http://localhost:3000)
 
