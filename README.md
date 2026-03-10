@@ -1,7 +1,11 @@
-# Securo
-
-[![CI](https://github.com/tassionoronha/finanseu/actions/workflows/ci.yml/badge.svg)](https://github.com/tassionoronha/finanseu/actions/workflows/ci.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+<p align="center">
+  <img src="docs/logo.svg" width="80" alt="Securo logo" />
+</p>
+<h1 align="center">Securo</h1>
+<p align="center">
+  <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
+</p>
 
 Open-source personal finance manager. Track accounts, categorize transactions, and understand your spending — with optional bank sync.
 
@@ -12,6 +16,10 @@ docker compose up --build
 ```
 
 Open [http://localhost:3000](http://localhost:3000) and create an account. That's it.
+
+<p align="center">
+  <img src="docs/screenshot.png" width="800" alt="Securo dashboard" />
+</p>
 
 ## Features
 
