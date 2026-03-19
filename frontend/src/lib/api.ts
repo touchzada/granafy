@@ -13,6 +13,7 @@ import type {
   Budget,
   BudgetVsActual,
   Rule,
+  QuickRuleCreate,
   ImportLog,
   Asset,
   AssetValue,
@@ -21,6 +22,9 @@ import type {
   MonthlyTrend,
   BalanceHistory,
   PaginatedResponse,
+  FinancialScore,
+  HeatmapDay,
+  Goal,
 } from '@/types'
 
 const api = axios.create({
@@ -210,6 +214,10 @@ export const transactions = {
     type?: string
     from?: string
     to?: string
+    min_amount?: number
+    max_amount?: number
+    sort_by?: string
+    sort_dir?: string
     q?: string
     page?: number
     limit?: number
@@ -240,6 +248,10 @@ export const transactions = {
     })
     return data
   },
+  detectTransfers: async (): Promise<{ paired_count: number }> => {
+    const { data } = await api.post('/transactions/detect-transfers')
+    return data
+  },
   previewImport: async (file: File, options?: {
     date_format?: string
     flip_amount?: boolean
@@ -266,6 +278,10 @@ export const transactions = {
     type?: string
     from?: string
     to?: string
+    min_amount?: number
+    max_amount?: number
+    sort_by?: string
+    sort_dir?: string
     q?: string
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', { params, responseType: 'blob' })
@@ -297,6 +313,10 @@ export const rules = {
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/rules/${id}`)
+  },
+  quickCreate: async (payload: QuickRuleCreate): Promise<Rule> => {
+    const { data } = await api.post('/rules/quick-create', payload)
+    return data
   },
   applyAll: async (): Promise<{ applied: number }> => {
     const { data } = await api.post('/rules/apply-all')
@@ -360,12 +380,12 @@ export const budgets = {
 
 // Dashboard
 export const dashboard = {
-  summary: async (month?: string, balanceDate?: string): Promise<DashboardSummary> => {
-    const { data } = await api.get('/dashboard/summary', { params: { month, balance_date: balanceDate } })
+  summary: async (month?: string, balanceDate?: string, accountId?: string): Promise<DashboardSummary> => {
+    const { data } = await api.get('/dashboard/summary', { params: { month, balance_date: balanceDate, account_id: accountId } })
     return data
   },
-  spendingByCategory: async (month?: string): Promise<SpendingByCategory[]> => {
-    const { data } = await api.get('/dashboard/spending-by-category', { params: { month } })
+  spendingByCategory: async (month?: string, accountId?: string): Promise<SpendingByCategory[]> => {
+    const { data } = await api.get('/dashboard/spending-by-category', { params: { month, account_id: accountId } })
     return data
   },
   monthlyTrend: async (months = 6): Promise<MonthlyTrend[]> => {
@@ -378,6 +398,18 @@ export const dashboard = {
   },
   balanceHistory: async (month?: string): Promise<BalanceHistory> => {
     const { data } = await api.get('/dashboard/balance-history', { params: { month } })
+    return data
+  },
+  score: async (month?: string): Promise<FinancialScore> => {
+    const { data } = await api.get('/dashboard/score', { params: { month } })
+    return data
+  },
+  heatmap: async (months = 6): Promise<HeatmapDay[]> => {
+    const { data } = await api.get('/dashboard/heatmap', { params: { months } })
+    return data
+  },
+  anomalyAlerts: async (month?: string): Promise<{ category_id: string; category_name: string; category_icon: string; category_color: string; current_amount: number; average_amount: number; percentage_over: number; severity: string }[]> => {
+    const { data } = await api.get('/dashboard/anomaly-alerts', { params: { month } })
     return data
   },
 }
@@ -434,6 +466,29 @@ export const importLogs = {
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/import-logs/${id}`)
+  },
+}
+
+// Goals
+export const goals = {
+  list: async (): Promise<Goal[]> => {
+    const { data } = await api.get('/goals')
+    return data
+  },
+  create: async (goal: { name: string; target_amount: number; currency?: string; target_date?: string; account_id?: string; icon?: string; color?: string }): Promise<Goal> => {
+    const { data } = await api.post('/goals', goal)
+    return data
+  },
+  update: async (id: string, goal: Partial<Goal>): Promise<Goal> => {
+    const { data } = await api.patch(`/goals/${id}`, goal)
+    return data
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/goals/${id}`)
+  },
+  deposit: async (id: string, amount: number): Promise<Goal> => {
+    const { data } = await api.patch(`/goals/${id}/deposit`, { amount })
+    return data
   },
 }
 

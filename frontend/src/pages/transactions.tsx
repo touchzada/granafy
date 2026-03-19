@@ -14,17 +14,18 @@ import {
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Check, Download, Search, X } from 'lucide-react'
+import { Check, Download, Search, X, ArrowUp, ArrowDown, ArrowUpDown, Wand2, ArrowRightLeft } from 'lucide-react'
 import type { Transaction } from '@/types'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { QuickRuleDialog } from '@/components/quick-rule-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 
 function formatCurrency(value: number, currency = 'BRL', locale = 'pt-BR') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: currency || 'BRL' }).format(value)
 }
 
 function parseHashtags(notes: string | null): string[] {
@@ -45,6 +46,10 @@ export default function TransactionsPage() {
   const [filterCategory, setFilterCategory] = useState<string>('')
   const [filterFrom, setFilterFrom] = useState<string>('')
   const [filterTo, setFilterTo] = useState<string>('')
+  const [minAmount, setMinAmount] = useState<string>('')
+  const [maxAmount, setMaxAmount] = useState<string>('')
+  const [sortBy, setSortBy] = useState<'date' | 'amount' | 'description'>('date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [searchInput, setSearchInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -52,6 +57,8 @@ export default function TransactionsPage() {
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [quickRuleOpen, setQuickRuleOpen] = useState(false)
+  const [quickRuleTx, setQuickRuleTx] = useState<Transaction | null>(null)
   const [bulkCategory, setBulkCategory] = useState<string>('')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
 
@@ -68,10 +75,10 @@ export default function TransactionsPage() {
   useEffect(() => {
     setSelectedIds(new Set())
     setBulkCategory('')
-  }, [page, filterAccount, filterCategory, filterFrom, filterTo, searchQuery])
+  }, [page, filterAccount, filterCategory, filterFrom, filterTo, minAmount, maxAmount, sortBy, sortDir, searchQuery])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, filterAccount, filterCategory, filterFrom, filterTo, searchQuery],
+    queryKey: ['transactions', page, filterAccount, filterCategory, filterFrom, filterTo, minAmount, maxAmount, sortBy, sortDir, searchQuery],
     queryFn: () =>
       transactions.list({
         page,
@@ -81,6 +88,10 @@ export default function TransactionsPage() {
         uncategorized: filterCategory === '__uncategorized__' ? true : undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
+        min_amount: minAmount ? Number(minAmount) : undefined,
+        max_amount: maxAmount ? Number(maxAmount) : undefined,
+        sort_by: sortBy,
+        sort_dir: sortDir,
         q: searchQuery || undefined,
       }),
   })
@@ -173,6 +184,22 @@ export default function TransactionsPage() {
     },
   })
 
+  const detectTransfersMutation = useMutation({
+    mutationFn: transactions.detectTransfers,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      if (data.paired_count > 0) {
+        toast.success(t('transactions.transfersDetected', { defaultValue: `${data.paired_count} pares de transferências detectados e ocultados dos relatórios.` }))
+      } else {
+        toast.info(t('transactions.noTransfersDetected', { defaultValue: 'Nenhuma nova transferência interna detectada.' }))
+      }
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -203,6 +230,21 @@ export default function TransactionsPage() {
   const someSelected = filteredItems.some(tx => selectedIds.has(tx.id)) && !allSelected
 
   const totalPages = data ? Math.ceil(data.total / 20) : 0
+  
+  const handleSort = (field: 'date' | 'amount' | 'description') => {
+    if (sortBy === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(field)
+      setSortDir(field === 'description' ? 'asc' : 'desc')
+    }
+    setPage(1)
+  }
+  
+  const renderSortIcon = (field: string) => {
+    if (sortBy !== field) return <ArrowUpDown size={12} className="opacity-40" />
+    return sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+  }
 
   return (
     <div>
@@ -211,6 +253,17 @@ export default function TransactionsPage() {
         title={t('transactions.title')}
         action={
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => detectTransfersMutation.mutate()}
+              disabled={detectTransfersMutation.isPending}
+              className="gap-2"
+            >
+              <ArrowRightLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">
+                {detectTransfersMutation.isPending ? t('common.loading', { defaultValue: 'Detectando...' }) : t('transactions.detectTransfers', { defaultValue: 'Detectar Transferências' })}
+              </span>
+            </Button>
             <Button
               variant="outline"
               disabled={exporting}
@@ -223,6 +276,10 @@ export default function TransactionsPage() {
                     uncategorized: filterCategory === '__uncategorized__' ? true : undefined,
                     from: filterFrom || undefined,
                     to: filterTo || undefined,
+                    min_amount: minAmount ? Number(minAmount) : undefined,
+                    max_amount: maxAmount ? Number(maxAmount) : undefined,
+                    sort_by: sortBy,
+                    sort_dir: sortDir,
                     q: searchQuery || undefined,
                   })
                   toast.success(t('transactions.exportSuccess'))
@@ -297,12 +354,34 @@ export default function TransactionsPage() {
               />
             </div>
           </div>
-          {(filterFrom || filterTo || filterAccount || filterCategory || searchInput) && (
+          <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
+            <div className="flex items-center relative">
+              <span className="absolute left-3 text-muted-foreground text-sm">R$</span>
+              <Input
+                type="number"
+                placeholder={t('transactions.minAmount', 'Mínimo')}
+                value={minAmount}
+                onChange={(e) => { setMinAmount(e.target.value); setPage(1) }}
+                className="pl-8 w-full md:w-[120px] h-[38px] text-sm"
+              />
+            </div>
+            <div className="flex items-center relative">
+              <span className="absolute left-3 text-muted-foreground text-sm">R$</span>
+              <Input
+                type="number"
+                placeholder={t('transactions.maxAmount', 'Máximo')}
+                value={maxAmount}
+                onChange={(e) => { setMaxAmount(e.target.value); setPage(1) }}
+                className="pl-8 w-full md:w-[120px] h-[38px] text-sm"
+              />
+            </div>
+          </div>
+          {(filterFrom || filterTo || filterAccount || filterCategory || searchInput || minAmount || maxAmount) && (
             <Button
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-foreground"
-              onClick={() => { setFilterFrom(''); setFilterTo(''); setFilterAccount(''); setFilterCategory(''); setSearchInput(''); setSearchQuery(''); setPage(1) }}
+              onClick={() => { setFilterFrom(''); setFilterTo(''); setFilterAccount(''); setFilterCategory(''); setSearchInput(''); setSearchQuery(''); setMinAmount(''); setMaxAmount(''); setPage(1) }}
             >
               {t('transactions.clearFilters')}
             </Button>
@@ -342,10 +421,24 @@ export default function TransactionsPage() {
                     className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                   />
                 </TableHead>
-                <TableHead className="text-xs font-medium text-muted-foreground py-3 pl-2">{t('transactions.description')}</TableHead>
+                <TableHead 
+                  className="text-xs font-medium text-muted-foreground py-3 pl-2 cursor-pointer hover:text-foreground transition-colors group"
+                  onClick={() => handleSort('description')}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {t('transactions.description')} {renderSortIcon('description')}
+                  </div>
+                </TableHead>
                 <TableHead className="hidden md:table-cell text-xs font-medium text-muted-foreground py-3 w-[180px]">{t('transactions.category')}</TableHead>
                 <TableHead className="hidden lg:table-cell text-xs font-medium text-muted-foreground py-3 w-[160px]">{t('transactions.account')}</TableHead>
-                <TableHead className="text-xs font-medium text-muted-foreground py-3 pr-5 text-right w-[120px] md:w-[180px]">{t('transactions.amount')}</TableHead>
+                <TableHead 
+                  className="text-xs font-medium text-muted-foreground py-3 pr-5 text-right w-[120px] md:w-[180px] cursor-pointer hover:text-foreground transition-colors group"
+                  onClick={() => handleSort('amount')}
+                >
+                  <div className="flex items-center justify-end gap-1.5">
+                    {t('transactions.amount')} {renderSortIcon('amount')}
+                  </div>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -370,11 +463,27 @@ export default function TransactionsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
+                          {tx.installments && (
+                            <span className="text-[10px] font-semibold tracking-wide text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full shrink-0">
+                              {tx.installments}
+                            </span>
+                          )}
                           {recurringList?.some(r => r.description === tx.description && r.type === tx.type) && (
-                            <span className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full">
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full shrink-0">
                               {t('transactions.recurringBadge')}
                             </span>
                           )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setQuickRuleTx(tx)
+                              setQuickRuleOpen(true)
+                            }}
+                            className="p-1 text-muted-foreground/40 hover:text-primary hover:bg-primary/5 rounded transition-colors group-hover:text-muted-foreground/60"
+                            title="Criar regra para esta transação"
+                          >
+                            <Wand2 size={13} />
+                          </button>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">{new Date(tx.date + 'T00:00:00').toLocaleDateString(locale)}</p>
                         {tx.notes && (
@@ -520,6 +629,12 @@ export default function TransactionsPage() {
         loading={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending}
         error={createMutation.error || updateMutation.error ? extractApiError(createMutation.error || updateMutation.error) : null}
         isSynced={editingTx?.source === 'sync'}
+      />
+
+      <QuickRuleDialog
+        open={quickRuleOpen}
+        onClose={() => { setQuickRuleOpen(false); setQuickRuleTx(null) }}
+        transaction={quickRuleTx}
       />
     </div>
   )

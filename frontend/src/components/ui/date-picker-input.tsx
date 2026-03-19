@@ -1,11 +1,4 @@
-import { useState } from 'react'
-import { format } from 'date-fns'
-import { ptBR, enUS } from 'date-fns/locale'
-import { CalendarIcon } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
-import { cn } from '@/lib/utils'
+import { DatePickerGranafy } from '@/components/date-picker-granafy'
 
 interface DatePickerInputProps {
   value: string
@@ -20,50 +13,18 @@ function DatePickerInput({
   value,
   onChange,
   placeholder,
-  className,
   disabled,
   align = 'start',
 }: DatePickerInputProps) {
-  const { i18n } = useTranslation()
-  const [open, setOpen] = useState(false)
-  const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
-  const locale = i18n.language === 'en' ? 'en-US' : i18n.language
-
-  const selectedDate = value ? new Date(value + 'T00:00:00') : undefined
-  const displayText = selectedDate
-    ? selectedDate.toLocaleDateString(locale)
-    : placeholder || 'dd/mm/yyyy'
-
+  const alignMap = { start: 'left' as const, center: 'center' as const, end: 'right' as const }
   return (
-    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          className={cn(
-            'inline-flex items-center gap-2 border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50 disabled:pointer-events-none min-w-[120px]',
-            !value && 'text-muted-foreground',
-            className,
-          )}
-        >
-          <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
-          {displayText}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align={align} className="w-auto p-0">
-        <Calendar
-          mode="single"
-          locale={dateFnsLocale}
-          selected={selectedDate}
-          defaultMonth={selectedDate ?? new Date()}
-          onSelect={(date) => {
-            if (!date) return
-            onChange(format(date, 'yyyy-MM-dd'))
-            setOpen(false)
-          }}
-        />
-      </PopoverContent>
-    </Popover>
+    <DatePickerGranafy
+      value={value}
+      onChange={onChange}
+      label={placeholder}
+      compact
+      alignPopover={alignMap[align]}
+    />
   )
 }
 

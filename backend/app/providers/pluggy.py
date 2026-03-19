@@ -125,6 +125,9 @@ class PluggyProvider(BankProvider):
                     type=self._map_account_type(acc.get("type", "")),
                     balance=Decimal(str(acc.get("balance", 0))),
                     currency=acc.get("currencyCode", "BRL"),
+                    credit_data=acc.get("creditData"),
+                    # Pluggy generally returns last 4 digits in 'number'
+                    account_number=acc.get("number"),
                 )
             )
 
@@ -157,6 +160,8 @@ class PluggyProvider(BankProvider):
                     type=self._map_account_type(acc.get("type", "")),
                     balance=Decimal(str(acc.get("balance", 0))),
                     currency=acc.get("currencyCode", "BRL"),
+                    credit_data=acc.get("creditData"),
+                    account_number=acc.get("number"),
                 )
             )
         return accounts

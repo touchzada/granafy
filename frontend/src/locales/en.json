@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Securo"
+    "name": "Granafy"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -12,7 +12,8 @@
     "budgets": "Budgets",
     "settings": "Settings",
     "recurring": "Recurring",
-    "assets": "Assets"
+    "assets": "Assets",
+    "advisor": "AI Advisor"
   },
   "auth": {
     "login": "Login",
@@ -31,7 +32,11 @@
     "greetingMorning": "Good morning",
     "greetingAfternoon": "Good afternoon",
     "greetingEvening": "Good evening",
-    "totalBalance": "Total Balance",
+    "totalBalance": "Total Net Worth",
+    "cashBalance": "Cash Balance",
+    "creditBalance": "Credit Card Bills",
+    "allAccounts": "All Accounts",
+    "creditCards": "Cards",
     "monthlyIncome": "Monthly Income",
     "monthlyExpenses": "Monthly Expenses",
     "pendingCategorization": "Uncategorized",
@@ -59,13 +64,16 @@
     "drillDownEmpty": "No transactions found",
     "drillDownClose": "Close",
     "savingsRate": "Savings Rate",
+    "healthScore": "Financial Health",
     "spendingProjection": "At this pace, you'll spend {{amount}} by month end",
     "uncategorizedCta": "{{count}} transactions need categorizing",
     "uncategorizedTotal": "{{amount}} in total",
     "categorizeNow": "Categorize now",
     "allCategorized": "All caught up!",
     "allCategorizedDesc": "All transactions are categorized",
-    "assetsValue": "Assets"
+    "assetsValue": "Assets",
+    "heatmapTitle": "Spending Heatmap",
+    "heatmapDesc": "Visualize your daily spending intensity over the last 6 months"
   },
   "transactions": {
     "title": "Transactions",
@@ -429,7 +437,7 @@
     "show": "Show values"
   },
   "setup": {
-    "title": "Welcome to Securo",
+    "title": "Welcome to Granafy",
     "description": "Create your admin account to get started.",
     "confirmPassword": "Confirm password",
     "createAdmin": "Create Admin Account",

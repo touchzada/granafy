@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # App
-    app_name: str = "Securo"
+    app_name: str = "Granafy"
     debug: bool = False
 
     # Database
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Celery
     redis_url: str = "redis://localhost:6379/0"
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="allow")
 
 
 @lru_cache

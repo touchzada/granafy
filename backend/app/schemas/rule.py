@@ -45,3 +45,12 @@ class RuleRead(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class QuickRuleCreate(BaseModel):
+    name: Optional[str] = None
+    description: str
+    category_id: uuid.UUID
+    existing_rule_id: Optional[uuid.UUID] = None
+    apply_all: bool = True
+

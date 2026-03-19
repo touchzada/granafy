@@ -31,6 +31,7 @@ import {
   Plus,
   Settings,
   Archive,
+  Undo2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
@@ -53,6 +54,129 @@ const ACCOUNT_TYPE_CONFIG: Record<string, { icon: React.ElementType; color: stri
 
 function getTypeConfig(type: string) {
   return ACCOUNT_TYPE_CONFIG[type] ?? ACCOUNT_TYPE_CONFIG['checking']
+}
+
+function AccountRow({
+  acc,
+  cfg,
+  Icon,
+  bal,
+  mask,
+  formatCurrency,
+  locale,
+  t,
+  isManual,
+  onEdit,
+  onClose,
+  onDelete,
+  onUpdateName,
+  onRestoreName,
+  isDeleting,
+}: any) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [name, setName] = useState(acc.custom_name || acc.name)
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation()
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (name.trim() !== acc.custom_name && name.trim() !== acc.name) onUpdateName(acc.id, name.trim())
+      else setIsEditing(false)
+    }
+    if (e.key === 'Escape') {
+      setName(acc.custom_name || acc.name)
+      setIsEditing(false)
+    }
+  }
+
+  const handleRestore = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onRestoreName(acc.id)
+  }
+
+  return (
+    <div className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
+      <div className="flex items-center gap-3 flex-1 min-w-0 pr-4">
+        <div className={`w-8 h-8 rounded-lg ${cfg.bg} flex items-center justify-center shrink-0`}>
+          <Icon size={14} className={cfg.color} />
+        </div>
+        <div className="min-w-0 flex-1">
+          {isEditing ? (
+            <input
+              autoFocus
+              className="bg-background/80 border border-primary/50 text-sm font-medium rounded px-1.5 py-0.5 text-foreground w-[200px] outline-none mb-0.5"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={() => {
+                if (name.trim() !== acc.custom_name && name.trim() !== acc.name) onUpdateName(acc.id, name.trim())
+                else setIsEditing(false)
+              }}
+            />
+          ) : (
+              <div className="flex items-center gap-2 group/name">
+                <button
+                  onClick={(e) => { e.preventDefault(); setIsEditing(true); }}
+                  className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors shrink-0"
+                  title="Editar nome"
+                >
+                  <Pencil size={12} />
+                </button>
+                <Link 
+                  to={`/accounts/${acc.id}`} 
+                  className="text-sm font-medium text-foreground truncate hover:text-primary transition-colors hover:underline"
+                >
+                  {acc.custom_name || acc.name}
+                </Link>
+                {!isEditing && acc.custom_name && acc.custom_name !== acc.name && (
+                <button 
+                  onClick={handleRestore}
+                  className="opacity-0 group-hover/name:opacity-100 p-0.5 text-muted-foreground hover:text-primary transition-all rounded-sm"
+                  title="Restaurar nome original do banco"
+                >
+                  <Undo2 size={12} />
+                </button>
+              )}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">{t(cfg.label)}</p>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-1 mr-3 opacity-0 group-hover:opacity-100 transition-opacity">
+        {isManual && (
+          <button
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            onClick={() => onEdit && onEdit(acc)}
+            title={t('common.edit')}
+          >
+            <Pencil size={13} />
+          </button>
+        )}
+        <button
+          className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors"
+          onClick={() => onClose && onClose(acc.id)}
+          title={t('accounts.close')}
+        >
+          <Archive size={13} />
+        </button>
+        {isManual && (
+          <button
+            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+            onClick={() => onDelete && onDelete(acc.id)}
+            disabled={isDeleting}
+            title={t('common.delete')}
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+      <p className={`text-xs sm:text-sm font-semibold tabular-nums text-right w-24 ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+        {mask(formatCurrency(bal, acc.currency, locale))}
+      </p>
+    </div>
+  )
 }
 
 export default function AccountsPage() {
@@ -208,44 +332,24 @@ export default function AccountsPage() {
                   const Icon = cfg.icon
                   const bal = Number(acc.current_balance)
                   return (
-                    <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
-                      <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`w-8 h-8 rounded-lg ${cfg.bg} flex items-center justify-center shrink-0`}>
-                          <Icon size={14} className={cfg.color} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{acc.name}</p>
-                          <p className="text-xs text-muted-foreground">{t(cfg.label)}</p>
-                        </div>
-                      </Link>
-                      <div className="flex items-center gap-1 mr-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                          onClick={() => { setEditingAccount(acc); setDialogOpen(true) }}
-                          title={t('common.edit')}
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                          onClick={() => setClosingAccountId(acc.id)}
-                          title={t('accounts.close')}
-                        >
-                          <Archive size={13} />
-                        </button>
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => setDeletingId(acc.id)}
-                          disabled={deleteMutation.isPending}
-                          title={t('common.delete')}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                      <p className={`text-xs sm:text-sm font-semibold tabular-nums text-right ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
-                        {mask(formatCurrency(bal, acc.currency, locale))}
-                      </p>
-                    </div>
+                    <AccountRow
+                      key={acc.id}
+                      acc={acc}
+                      cfg={cfg}
+                      Icon={Icon}
+                      bal={bal}
+                      mask={mask}
+                      formatCurrency={formatCurrency}
+                      locale={locale}
+                      t={t}
+                      isManual={true}
+                      onEdit={(a: any) => { setEditingAccount(a); setDialogOpen(true) }}
+                      onClose={setClosingAccountId}
+                      onDelete={setDeletingId}
+                      onUpdateName={(id: string, name: string) => updateMutation.mutate({ id, custom_name: name })}
+                      onRestoreName={(id: string) => updateMutation.mutate({ id, custom_name: null })}
+                      isDeleting={deleteMutation.isPending}
+                    />
                   )
                 })}
               </div>
@@ -343,27 +447,21 @@ export default function AccountsPage() {
                           const Icon = cfg.icon
                           const bal = Number(acc.current_balance)
                           return (
-                            <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
-                              <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                                <div className={`w-8 h-8 rounded-lg ${cfg.bg} flex items-center justify-center shrink-0`}>
-                                  <Icon size={14} className={cfg.color} />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-foreground truncate">{acc.name}</p>
-                                  <p className="text-xs text-muted-foreground">{t(cfg.label)}</p>
-                                </div>
-                              </Link>
-                              <button
-                                className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors opacity-0 group-hover:opacity-100 mr-3"
-                                onClick={(e) => { e.preventDefault(); setClosingAccountId(acc.id) }}
-                                title={t('accounts.close')}
-                              >
-                                <Archive size={13} />
-                              </button>
-                              <p className={`text-xs sm:text-sm font-semibold tabular-nums text-right ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
-                                {mask(formatCurrency(bal, acc.currency, locale))}
-                              </p>
-                            </div>
+                            <AccountRow
+                              key={acc.id}
+                              acc={acc}
+                              cfg={cfg}
+                              Icon={Icon}
+                              bal={bal}
+                              mask={mask}
+                              formatCurrency={formatCurrency}
+                              locale={locale}
+                              t={t}
+                              isManual={false}
+                              onClose={setClosingAccountId}
+                              onUpdateName={(id: string, name: string) => updateMutation.mutate({ id, custom_name: name })}
+                              onRestoreName={(id: string) => updateMutation.mutate({ id, custom_name: null })}
+                            />
                           )
                         })}
                       </div>

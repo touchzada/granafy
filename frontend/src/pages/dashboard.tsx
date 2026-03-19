@@ -1,13 +1,12 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format } from 'date-fns'
-import { ptBR, enUS } from 'date-fns/locale'
-import { dashboard, transactions, budgets, categories as categoriesApi, accounts as accountsApi } from '@/lib/api'
+import { dashboard, transactions, budgets, categories as categoriesApi, accounts as accountsApi, goals as goalsApi } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
+import { DatePickerGranafy } from '@/components/date-picker-granafy'
+
 import {
   Table,
   TableBody,
@@ -25,17 +24,135 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  Wallet,
+  Building2,
+  Wand2,
+  CheckCircle2,
+  Target,
+} from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { QuickRuleDialog } from '@/components/quick-rule-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
-import type { Transaction } from '@/types'
+import type { Transaction, HeatmapDay, Goal } from '@/types'
 
 function formatCurrency(value: number, currency = 'BRL', locale = 'pt-BR') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
+}
+
+const HEATMAP_COLORS = [
+  'bg-muted/30',                    // level 0 - no spending
+  'bg-emerald-200 dark:bg-emerald-900/60', // level 1 - low
+  'bg-amber-200 dark:bg-amber-700/60',     // level 2 - medium
+  'bg-orange-300 dark:bg-orange-600/70',   // level 3 - high
+  'bg-rose-400 dark:bg-rose-500/80',       // level 4 - very high
+]
+
+const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+
+export function getFriendlyAccountName(rawName: string): string {
+  const BANK_NAMES: Record<string, string> = {
+    'nu': 'Nubank', 'nubank': 'Nubank', 'nu pagamentos': 'Nubank',
+    'itau': 'Itaú', 'itaú': 'Itaú',
+    'bradesco': 'Bradesco', 'santander': 'Santander',
+    'caixa': 'Caixa', 'bb': 'Banco do Brasil', 'inter': 'Inter',
+    'c6': 'C6 Bank', 'btg': 'BTG Pactual', 'neon': 'Neon',
+    'picpay': 'PicPay', 'mercadopago': 'Mercado Pago',
+  }
+  const lowerName = rawName.toLowerCase()
+  const friendlyName = Object.entries(BANK_NAMES).find(([key]) => lowerName.includes(key))?.[1]
+  return friendlyName || rawName
+}
+
+function HeatmapGrid({ data, locale = 'pt-BR', currency = 'BRL', privacyMode = false, onDayClick }: { data: HeatmapDay[], locale?: string, currency?: string, privacyMode?: boolean | string, onDayClick?: (date: string) => void }) {
+  const weeks: (HeatmapDay | null)[][] = []
+  let currentWeek: (HeatmapDay | null)[] = []
+
+  if (data.length > 0) {
+    const firstDow = new Date(data[0].date + 'T00:00:00').getDay()
+    for (let i = 0; i < firstDow; i++) currentWeek.push(null)
+  }
+
+  for (const day of data) {
+    currentWeek.push(day)
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek)
+      currentWeek = []
+    }
+  }
+  if (currentWeek.length > 0) {
+    while (currentWeek.length < 7) currentWeek.push(null)
+    weeks.push(currentWeek)
+  }
+
+  const [tooltip, setTooltip] = useState<{ day: HeatmapDay; x: number; y: number } | null>(null)
+
+  return (
+    <div className="relative">
+      <div className="flex gap-[3px]">
+        {/* Weekday labels */}
+        <div className="flex flex-col gap-[3px] pr-1.5 justify-start">
+          {WEEKDAY_LABELS.map((label, i) => (
+            <div key={i} className="h-[12px] flex items-center text-[9px] text-muted-foreground leading-none font-medium">
+              {label}
+            </div>
+          ))}
+        </div>
+
+        {/* Grid */}
+        <div className="flex gap-[3px] overflow-x-auto" style={{ minWidth: weeks.length * 15 }}>
+          {weeks.map((week, wi) => (
+            <div key={wi} className="flex flex-col gap-[3px]">
+              {week.map((day, di) => (
+                <div
+                  key={`${wi}-${di}`}
+                  className={`w-[12px] h-[12px] rounded-[2px] transition-colors ${day ? HEATMAP_COLORS[day.level] : 'bg-transparent'} ${day ? 'cursor-pointer hover:ring-1 hover:ring-foreground/30' : ''}`}
+                  onMouseEnter={(e) => {
+                    if (day) {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setTooltip({ day, x: rect.left + rect.width / 2, y: rect.top })
+                    }
+                  }}
+                  onMouseLeave={() => setTooltip(null)}
+                  onClick={() => {
+                    if (day && onDayClick) onDayClick(day.date)
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-1.5 mt-3 text-[10px] text-muted-foreground ml-[30px]">
+        <span>Menos</span>
+        {HEATMAP_COLORS.map((c, i) => (
+          <div key={i} className={`w-[12px] h-[12px] rounded-[2px] ${c}`} />
+        ))}
+        <span>Mais</span>
+      </div>
+
+      {/* Floating tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-50 px-2.5 py-1.5 rounded-lg bg-popover border border-border shadow-lg text-xs pointer-events-none"
+          style={{ left: tooltip.x, top: tooltip.y - 48, transform: 'translateX(-50%)' }}
+        >
+          <p className="font-semibold text-foreground">
+            {WEEKDAY_LABELS[new Date(tooltip.day.date + 'T00:00:00').getDay()]}, {new Date(tooltip.day.date + 'T00:00:00').toLocaleDateString(locale)}
+          </p>
+          <p className="text-muted-foreground">{privacyMode ? '••••' : formatCurrency(tooltip.day.amount, currency, locale)}</p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function currentMonth() {
@@ -66,7 +183,7 @@ function formatDate(dateStr: string, locale = 'pt-BR') {
 
 export default function DashboardPage() {
   const { t, i18n } = useTranslation()
-  const { mask, privacyMode, MASK } = usePrivacyMode()
+  const { mask, blurClass, privacyMode, MASK } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'BRL'
   const displayName = user?.preferences?.display_name || ''
@@ -83,11 +200,13 @@ export default function DashboardPage() {
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [quickRuleOpen, setQuickRuleOpen] = useState(false)
+  const [quickRuleTx, setQuickRuleTx] = useState<Transaction | null>(null)
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('all')
+  const [uncategorizedDismissed, setUncategorizedDismissed] = useState(false)
+  const apiAccountId = selectedAccountId === 'all' ? undefined : selectedAccountId
   const queryClient = useQueryClient()
-  const [headerCalOpen, setHeaderCalOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
-  const [balanceCalOpen, setBalanceCalOpen] = useState(false)
-  const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
   const monthParam = `${selectedMonth}-01`
   const monthStart = `${selectedMonth}-01`
   const monthEnd = `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`
@@ -99,13 +218,13 @@ export default function DashboardPage() {
   }
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboard', 'summary', selectedMonth, balanceDate],
-    queryFn: () => dashboard.summary(monthParam, balanceDate),
+    queryKey: ['dashboard', 'summary', selectedMonth, balanceDate, apiAccountId],
+    queryFn: () => dashboard.summary(monthParam, balanceDate, apiAccountId),
   })
 
   const { data: spending, isLoading: spendingLoading } = useQuery({
-    queryKey: ['dashboard', 'spending', selectedMonth],
-    queryFn: () => dashboard.spendingByCategory(monthParam),
+    queryKey: ['dashboard', 'spending', selectedMonth, apiAccountId],
+    queryFn: () => dashboard.spendingByCategory(monthParam, apiAccountId),
   })
 
   const prevMonth = shiftMonth(selectedMonth, -1)
@@ -129,6 +248,16 @@ export default function DashboardPage() {
     queryFn: () => dashboard.projectedTransactions(monthParam),
   })
 
+  const { data: scoreData, isLoading: scoreLoading } = useQuery({
+    queryKey: ['dashboard', 'score', selectedMonth],
+    queryFn: () => dashboard.score(monthParam),
+  })
+
+  const { data: heatmapData, isLoading: heatmapLoading } = useQuery({
+    queryKey: ['dashboard', 'heatmap'],
+    queryFn: () => dashboard.heatmap(6),
+  })
+
   const { data: budgetComparison } = useQuery({
     queryKey: ['budgets', 'comparison', selectedMonth],
     queryFn: () => budgets.comparison(monthParam),
@@ -143,6 +272,74 @@ export default function DashboardPage() {
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
   })
+
+  const { data: goalsList } = useQuery({
+    queryKey: ['goals'],
+    queryFn: goalsApi.list,
+  })
+
+  // Account grouping for custom selector
+  const accountGroups = useMemo(() => {
+    if (!accountsList) return {}
+    // First pass: group accounts by connection_id (or fallback key)
+    const rawGroups: Record<string, typeof accountsList> = {}
+    
+    accountsList.forEach(account => {
+      const key = account.connection_id || account.name.split(' ')[0] || 'manual'
+      if (!rawGroups[key]) rawGroups[key] = []
+      rawGroups[key].push(account)
+    })
+    
+    // Second pass: build structured groups with proper names
+    const groups: Record<string, { name: string; mainAccounts: typeof accountsList; creditCards: typeof accountsList }> = {}
+    
+    Object.entries(rawGroups).forEach(([key, accs]) => {
+      const mainAccounts = accs.filter(a => a.type !== 'credit_card')
+      const creditCards = accs.filter(a => a.type === 'credit_card')
+      
+      // Derive a sensible group name:
+      // 1. Prefer the name of a checking/savings account (not a card)
+      // 2. Fall back to extracting institution name before " - " from any account
+      // 3. Last resort: first word of any account name
+      let groupName = 'Contas Manuais'
+      const mainAcc = mainAccounts[0]
+      const anyAcc = accs[0]
+      if (mainAcc) {
+        groupName = mainAcc.name.includes(' - ') ? mainAcc.name.split(' - ')[0].trim() : mainAcc.name.split(' ')[0]
+      } else if (anyAcc) {
+        groupName = anyAcc.name.includes(' - ') ? anyAcc.name.split(' - ')[0].trim() : anyAcc.name.split(' ')[0]
+      }
+      
+      const friendlyName = getFriendlyAccountName(groupName)
+      if (friendlyName !== groupName) groupName = friendlyName
+      
+      groups[key] = {
+        name: anyAcc?.connection_id ? groupName.toUpperCase() : 'Contas Manuais',
+        mainAccounts,
+        creditCards,
+      }
+    })
+    return groups
+  }, [accountsList])
+
+  const [selectorOpen, setSelectorOpen] = useState(false)
+  const selectorRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (ev: MouseEvent) => {
+      if (selectorRef.current && !selectorRef.current.contains(ev.target as Node)) {
+        setSelectorOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const selectedAccountLabel = useMemo(() => {
+    if (selectedAccountId === 'all' || !accountsList) return t('dashboard.allAccounts')
+    const acc = accountsList.find(a => a.id === selectedAccountId)
+    return acc ? getFriendlyAccountName(acc.name) : t('dashboard.allAccounts')
+  }, [selectedAccountId, accountsList, t])
 
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: Partial<Transaction> & { id: string }) =>
@@ -172,13 +369,14 @@ export default function DashboardPage() {
   const cumulativeData = useMemo(() => {
     if (!balanceHistory) return []
     const daysInMonth = monthLastDay(selectedMonth)
-    const result: { day: number; current: number | null; previous: number }[] = []
+    const result: { day: number; current: number | null; projected: number | null; previous: number }[] = []
     for (let day = 1; day <= daysInMonth; day++) {
       const cur = balanceHistory.current.find(d => d.day === day)
       const prev = balanceHistory.previous.find(d => d.day === day)
       result.push({
         day,
         current: cur?.balance ?? null,
+        projected: cur?.projected_balance ?? null,
         previous: prev?.balance ?? 0,
       })
     }
@@ -192,6 +390,15 @@ export default function DashboardPage() {
   const monthVariation = currentLatestBalance - currentStartBalance
 
   const totalBalance = Object.values(summary?.total_balance ?? {}).reduce((a, b) => a + Number(b), 0)
+  const cashBalance = Object.values(summary?.cash_balance ?? {}).reduce((a, b) => a + Number(b), 0)
+  const creditOverview = Object.values(summary?.credit_balance ?? {}).reduce(
+    (acc, curr) => ({
+      total_used: acc.total_used + Number(curr.total_used),
+      current_bill: acc.current_bill + Number(curr.current_bill),
+      available_limit: acc.available_limit + Number(curr.available_limit),
+    }),
+    { total_used: 0, current_bill: 0, available_limit: 0 }
+  )
 
 
   // Savings rate & projection
@@ -207,7 +414,7 @@ export default function DashboardPage() {
 
   // Uncategorized data
   const uncategorizedCount = summary?.pending_categorization ?? 0
-  const uncategorizedAmount = summary?.pending_categorization_amount ?? 0
+
 
   // Merged category bars data
   const mergedCategories = useMemo(() => {
@@ -324,32 +531,17 @@ export default function DashboardPage() {
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
               onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
             >&#8249;</button>
-            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer"
-                >
-                  <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {new Date(selectedMonth + '-02').toLocaleDateString(locale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  locale={dateFnsLocale}
-                  selected={new Date((balanceDate ?? `${selectedMonth}-01`) + 'T00:00:00')}
-                  defaultMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onSelect={(date) => {
-                    if (!date) return
-                    const newMonth = format(date, 'yyyy-MM')
-                    setSelectedMonth(newMonth)
-                    setBalanceDate(format(date, 'yyyy-MM-dd'))
-                    setHeaderCalOpen(false)
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
+            <DatePickerGranafy
+              value={balanceDate || `${selectedMonth}-01`}
+              onChange={(v) => {
+                const newMonth = v.substring(0, 7)
+                setSelectedMonth(newMonth)
+                setBalanceDate(v)
+              }}
+              compact
+              alignPopover="center"
+            />
+
             <button
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
               onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
@@ -358,165 +550,337 @@ export default function DashboardPage() {
         }
       />
 
-      {/* Hero Card: Savings Rate + Uncategorized CTA */}
-      <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
-        <div className="grid grid-cols-1 lg:grid-cols-3">
-          {/* Left: Savings Rate & Metrics */}
-          <div className="lg:col-span-2 px-5 py-4">
-            <div className="flex items-baseline gap-3 mb-3">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.savingsRate')}</p>
-                {summaryLoading ? (
-                  <Skeleton className="h-10 w-28" />
-                ) : (
-                  <p className={`text-4xl font-bold tabular-nums leading-tight ${savingsRateColor}`}>
-                    {savingsRateDisplay}
-                  </p>
-                )}
+      {/* Account Selector (Glassmorphism UI) */}
+      {(accountsList && accountsList.length > 0) && (
+        <div className="flex items-center gap-2 mb-4 -mt-2 z-30 relative">
+          <div ref={selectorRef} className="relative z-40">
+            <button
+              onClick={() => setSelectorOpen(!selectorOpen)}
+              className={`flex items-center gap-2.5 rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-300 cursor-pointer select-none border ${
+                selectorOpen
+                  ? 'bg-primary/10 border-primary/50 text-foreground shadow-lg shadow-primary/5'
+                  : selectedAccountId !== 'all'
+                  ? 'bg-gradient-to-r from-primary/10 to-transparent border-primary/30 text-foreground hover:border-primary/50 hover:shadow-lg'
+                  : 'bg-card border-border text-foreground hover:border-primary/40 hover:bg-card/80'
+              }`}
+            >
+              <Building2 className={`w-4 h-4 flex-shrink-0 transition-colors ${selectedAccountId !== 'all' ? 'text-primary' : 'text-muted-foreground'}`} />
+              <span className="max-w-[200px] truncate">{selectedAccountLabel}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-300 ${selectorOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Panel */}
+            <div
+              className={`absolute left-0 top-full mt-2 w-72 transition-all duration-200 origin-top-left ${
+                selectorOpen ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
+              }`}
+            >
+              <div className="bg-card/95 backdrop-blur-xl border border-border/60 rounded-xl shadow-2xl shadow-black/10 overflow-hidden dark:shadow-black/40">
+                <div className="px-3.5 py-2.5 border-b border-border/50">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Selecionar Conta</p>
+                </div>
+                <div className="py-1.5 max-h-[320px] overflow-y-auto scrollbar-thin">
+                  <button
+                    onClick={() => { setSelectedAccountId('all'); setSelectorOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm transition-all duration-150 ${
+                      selectedAccountId === 'all'
+                        ? 'bg-primary/15 text-foreground font-medium'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    }`}
+                  >
+                    <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
+                      selectedAccountId === 'all' ? 'bg-primary/20 text-primary' : 'bg-accent text-transparent'
+                    }`}>
+                      <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                    </div>
+                    <span className="flex-1 text-left">{t('dashboard.allAccounts')}</span>
+                  </button>
+
+                  {Object.entries(accountGroups).map(([key, group]) => (
+                    <div key={key} className="mt-1">
+                      <div className="px-3 py-1.5 bg-accent/30 border-y border-border/30">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1 truncate">{group.name}</p>
+                      </div>
+                      {/* Main accounts only - credit cards shown in hero mini-cards */}
+                      {group.mainAccounts.map((acc) => {
+                        const isActive = selectedAccountId === acc.id;
+                        return (
+                          <button
+                            key={acc.id}
+                            onClick={() => { setSelectedAccountId(acc.id); setSelectorOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm transition-all duration-150 ${
+                              isActive
+                                ? 'bg-primary/10 font-medium'
+                                : 'hover:bg-accent/70'
+                            }`}
+                          >
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
+                              isActive 
+                                ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-accent/50 text-muted-foreground'
+                            }`}>
+                              <Wallet className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 text-left min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="truncate font-semibold text-xs text-foreground">
+                                  {acc.custom_name || acc.name}
+                                </span>
+                                {isActive && <Check className="w-3.5 h-3.5 text-primary shrink-0" strokeWidth={3} />}
+                              </div>
+                              <div className={`text-[10px] mt-0.5 tabular-nums font-medium ${Number(acc.current_balance) < 0 ? 'text-rose-500' : 'text-emerald-600'} ${blurClass}`}>
+                                {mask(formatCurrency(Number(acc.current_balance), acc.currency, locale))}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="flex flex-wrap gap-6">
-              {/* Balance */}
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.totalBalance')}</p>
-                {summaryLoading ? (
-                  <Skeleton className="h-7 w-24" />
-                ) : (
-                  <div>
-                    <p className={`text-lg font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                      {mask(formatCurrency(totalBalance, userCurrency, locale))}
-                    </p>
-                    <Popover open={balanceCalOpen} onOpenChange={setBalanceCalOpen}>
-                      <PopoverTrigger asChild>
-                        <button className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors cursor-pointer p-0 bg-transparent border-none outline-none">
-                          <CalendarIcon className="size-3" />
-                          {(() => {
-                            const dateStr = balanceDate ?? summary?.balance_date ?? ''
-                            if (!dateStr) return ''
-                            return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
-                          })()}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="start" className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          locale={dateFnsLocale}
-                          selected={(() => {
-                            const dateStr = balanceDate ?? summary?.balance_date ?? ''
-                            return dateStr ? new Date(dateStr + 'T00:00:00') : undefined
-                          })()}
-                          defaultMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                          onSelect={(date) => {
-                            if (!date) return
-                            setBalanceDate(format(date, 'yyyy-MM-dd'))
-                            setBalanceCalOpen(false)
-                          }}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                )}
-              </div>
-
-              {/* Income */}
-              <div
-                className="min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
-                onClick={() => setDrillDown({
-                  title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
-                  type: 'credit',
-                  from: monthStart,
-                  to: monthEnd,
-                })}
-              >
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.monthlyIncome')}</p>
-                {summaryLoading ? (
-                  <Skeleton className="h-7 w-24" />
-                ) : (
-                  <p className="text-lg font-bold tabular-nums text-emerald-600">
-                    +{mask(formatCurrency(income, userCurrency, locale))}
+      {/* Hero Bento Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 relative z-10">
+          
+          {/* Health Score */}
+          <div className="col-span-2 md:col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between group relative overflow-hidden">
+            <div className="relative z-10">
+              <p className="text-xs font-medium text-muted-foreground mb-1 group-hover:text-foreground transition-colors">{t('dashboard.healthScore')}</p>
+              {scoreLoading ? (
+                <Skeleton className="h-10 w-28 mt-2" />
+              ) : (
+                <div className="flex items-end gap-3 mt-1.5">
+                  <p className={`text-5xl font-black tabular-nums tracking-tighter leading-none ${scoreData?.score && scoreData.score >= 80 ? 'text-emerald-500' : scoreData?.score && scoreData.score >= 50 ? 'text-amber-500' : 'text-rose-500'}`}>
+                    {scoreData?.score ?? 0}
                   </p>
-                )}
-              </div>
-
-              {/* Expenses */}
-              <div
-                className="min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
-                onClick={() => setDrillDown({
-                  title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
-                  type: 'debit',
-                  from: monthStart,
-                  to: monthEnd,
-                })}
-              >
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.monthlyExpenses')}</p>
-                {summaryLoading ? (
-                  <Skeleton className="h-7 w-24" />
-                ) : (
-                  <p className="text-lg font-bold tabular-nums text-rose-500">
-                    -{mask(formatCurrency(expenses, userCurrency, locale))}
-                  </p>
-                )}
-              </div>
-
-              {/* Assets Value */}
-              {!summaryLoading && summary?.assets_value && Object.values(summary.assets_value).reduce((a, b) => a + b, 0) > 0 && (
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.assetsValue')}</p>
-                  <p className="text-lg font-bold tabular-nums text-blue-600">
-                    {mask(formatCurrency(Object.values(summary.assets_value).reduce((a, b) => a + b, 0), userCurrency, locale))}
-                  </p>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider mb-1 ${scoreData?.score && scoreData.score >= 80 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : scoreData?.score && scoreData.score >= 50 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'}`}>
+                    {scoreData?.health_level ?? ''}
+                  </span>
                 </div>
               )}
             </div>
+            {/* Subtle background glow based on score */}
+            <div className={`absolute -bottom-10 -right-10 w-32 h-32 rounded-full blur-3xl opacity-20 dark:opacity-10 pointer-events-none transition-colors duration-1000 ${scoreData?.score && scoreData.score >= 80 ? 'bg-emerald-500' : scoreData?.score && scoreData.score >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`} />
+          </div>
 
-            {/* Spending projection */}
-            {projectedSpend !== null && !summaryLoading && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('dashboard.spendingProjection', { amount: mask(formatCurrency(projectedSpend, userCurrency, locale)) })}
+          {/* Savings Rate */}
+          <div className="col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group">
+            <p className="text-xs font-medium text-muted-foreground mb-2 group-hover:text-foreground transition-colors">{t('dashboard.savingsRate')}</p>
+            {summaryLoading ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <p className={`text-2xl font-bold tabular-nums tracking-tight ${savingsRateColor}`}>
+                {savingsRateDisplay}
               </p>
             )}
           </div>
 
-          {/* Right: Uncategorized CTA */}
-          <div className="lg:col-span-1 px-5 py-4 border-t lg:border-t-0 lg:border-l border-border flex flex-col items-center justify-center text-center">
+          {/* Cash Balance */}
+          <div className="col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group">
+            <p className="text-xs font-medium text-muted-foreground mb-2 group-hover:text-foreground transition-colors">{t('dashboard.cashBalance')}</p>
             {summaryLoading ? (
-              <Skeleton className="h-16 w-16 rounded-full" />
-            ) : uncategorizedCount > 0 ? (
-              <div
-                className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => setDrillDown({
-                  title: t('dashboard.drillDownUncategorized'),
-                  uncategorized: true,
-                })}
-              >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold text-white mx-auto mb-2 ${
-                  uncategorizedCount >= 20 ? 'bg-amber-500' : 'bg-amber-400'
-                }`}>
-                  {uncategorizedCount}
-                </div>
-                <p className="text-sm font-medium text-foreground">
-                  {t('dashboard.uncategorizedCta', { count: uncategorizedCount })}
-                </p>
-                {uncategorizedAmount > 0 && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {mask(t('dashboard.uncategorizedTotal', { amount: formatCurrency(uncategorizedAmount, userCurrency, locale) }))}
-                  </p>
-                )}
-                <p className="text-sm font-semibold text-amber-600 mt-2 hover:underline">
-                  {t('dashboard.categorizeNow')} &rarr;
-                </p>
-              </div>
+              <Skeleton className="h-8 w-24" />
+            ) : (
+              <p className={`text-2xl font-bold tabular-nums tracking-tight text-emerald-600 dark:text-emerald-500 ${blurClass}`}>
+                {mask(formatCurrency(cashBalance, userCurrency, locale))}
+              </p>
+            )}
+          </div>
+
+          {/* Credit Balance */}
+          <div className="col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group">
+            <p className="text-xs font-medium text-muted-foreground mb-2 group-hover:text-foreground transition-colors">{t('dashboard.creditBalance')}</p>
+            {summaryLoading ? (
+              <Skeleton className="h-8 w-24" />
             ) : (
               <div>
-                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-1.5" />
-                <p className="text-sm font-semibold text-foreground">{t('dashboard.allCategorized')}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.allCategorizedDesc')}</p>
+                <p className={`text-2xl font-bold tabular-nums tracking-tight text-rose-500 ${blurClass}`}>
+                  {mask(formatCurrency(creditOverview.total_used, userCurrency, locale))}
+                </p>
+                {creditOverview.available_limit > 0 && (
+                  <p className={`text-[10px] text-muted-foreground mt-1 truncate ${blurClass}`}>
+                    Limite disp: {mask(formatCurrency(creditOverview.available_limit, userCurrency, locale))}
+                  </p>
+                )}
               </div>
             )}
           </div>
+
+          {/* Income */}
+          <div
+            className="col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
+            onClick={() => setDrillDown({
+              title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
+              type: 'credit',
+              from: monthStart,
+              to: monthEnd,
+              account_id: apiAccountId,
+            })}
+          >
+            <p className="text-xs font-medium text-muted-foreground mb-2 group-hover:text-foreground transition-colors">{t('dashboard.monthlyIncome')}</p>
+            {summaryLoading ? (
+              <Skeleton className="h-8 w-24" />
+            ) : (
+              <p className={`text-2xl font-bold tabular-nums tracking-tight text-emerald-600 ${blurClass}`}>
+                +{mask(formatCurrency(income, userCurrency, locale))}
+              </p>
+            )}
+          </div>
+
+          {/* Expenses & Projection */}
+          <div
+            className="col-span-2 md:col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group cursor-pointer relative overflow-hidden"
+            onClick={() => setDrillDown({
+              title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
+              type: 'debit',
+              from: monthStart,
+              to: monthEnd,
+              account_id: apiAccountId,
+            })}
+          >
+            <div className="relative z-10">
+              <p className="text-xs font-medium text-muted-foreground mb-2 group-hover:text-foreground transition-colors">{t('dashboard.monthlyExpenses')}</p>
+              {summaryLoading ? (
+                <Skeleton className="h-8 w-24" />
+              ) : (
+                <div>
+                  <p className={`text-2xl font-bold tabular-nums tracking-tight text-rose-500 ${blurClass}`}>
+                    -{mask(formatCurrency(expenses, userCurrency, locale))}
+                  </p>
+                  {projectedSpend !== null && (
+                    <p className="text-[10px] text-muted-foreground mt-1.5 font-medium">
+                      Projeção: <span className="font-bold">{mask(formatCurrency(projectedSpend, userCurrency, locale))}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+          </div>
         </div>
+
+      </div> {/* <-- Closes Metrics Bento Grid */}
+
+      {/* Credit Card Panel - Positioned Underneath */}
+      <div className="w-full mb-6">
+        {/* Dismissible categorization notification */}
+        {uncategorizedCount > 0 && !uncategorizedDismissed && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs hover:border-amber-500/40 transition-colors group mb-4">
+            <span className="px-1.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full min-w-[22px] text-center shadow-sm">{uncategorizedCount}</span>
+            <button
+              className="flex-1 text-left text-amber-600 dark:text-amber-400 font-medium group-hover:underline"
+              onClick={() => setDrillDown({
+                title: t('dashboard.drillDownUncategorized'),
+                uncategorized: true,
+              })}
+            >
+              {t('dashboard.categorizeNow')} →
+            </button>
+            <button
+              onClick={() => setUncategorizedDismissed(true)}
+              className="text-amber-600/50 hover:text-amber-600 dark:text-amber-400/50 dark:hover:text-amber-400 transition-colors p-1 rounded-md hover:bg-amber-500/10"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Credit Card Mini-Cards */}
+        {(() => {
+          const allCards = (accountsList ?? []).filter(a => {
+            if (a.type !== 'credit_card') return false
+            if (selectedAccountId === 'all') return true
+            
+            const selectedAcc = accountsList?.find(acc => acc.id === selectedAccountId)
+            if (!selectedAcc || !selectedAcc.connection_id) return true
+            
+            return a.connection_id === selectedAcc.connection_id
+          })
+
+          if (allCards.length === 0) {
+            if (uncategorizedCount <= 0 || uncategorizedDismissed) {
+              return (
+                <div className="flex flex-col items-center justify-center p-8 bg-card/40 backdrop-blur-xl border border-border/60 rounded-2xl shadow-sm">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center mb-3">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground text-center">{t('dashboard.allCategorized')}</p>
+                  <p className="text-xs text-muted-foreground mt-1 text-center">{t('dashboard.allCategorizedDesc')}</p>
+                </div>
+              )
+            }
+            return null
+          }
+          return (
+            <div className="flex flex-col w-full">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-1 mb-3">💳 Cartões de Crédito</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {allCards.map(card => {
+                  const usedAmount = Math.abs(Number(card.current_balance))
+                  const totalLimit = (card.credit_data?.creditLimit ?? Number(card.balance)) || 0
+                  const availableLimit = Math.max(0, totalLimit - usedAmount)
+                  const progress = totalLimit > 0 ? (usedAmount / totalLimit) * 100 : 0
+                  const cardBrandName = card.custom_name || card.name.replace(/cartão/i, '').trim()
+                  return (
+                    <div key={card.id} className="relative overflow-hidden rounded-xl border border-border bg-gradient-to-br from-card/80 to-muted/30 p-4 shadow-sm hover:shadow-md transition-all duration-300">
+                      <div className="flex justify-between items-start mb-4 relative z-10">
+                        <div>
+                          <Link to={`/accounts/${card.id}`} className="text-xs font-bold text-foreground truncate max-w-[160px] uppercase tracking-wide hover:text-primary transition-colors hover:underline">
+                            {cardBrandName}
+                          </Link>
+                          <p className="text-[9px] text-muted-foreground font-medium uppercase mt-0.5 tracking-wider">{card.credit_data?.brand || card.name.split(' ')[0] || 'Cartão de Crédito'}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          {card.account_number && (
+                            <div className="px-1.5 py-0.5 rounded bg-muted/50 border border-border/50 text-[9px] font-mono text-muted-foreground flex items-center gap-1">
+                              <span className="opacity-50">••••</span> {card.account_number}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Ativo</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3 mb-3 relative z-10">
+                        <div>
+                          <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Fatura Atual</p>
+                          <p className={`text-sm font-black tabular-nums tracking-tight text-foreground ${blurClass}`}>
+                            {mask(formatCurrency(usedAmount, card.currency, locale))}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Limite Disp.</p>
+                          <p className={`text-sm font-black tabular-nums tracking-tight text-emerald-600 dark:text-emerald-400 ${blurClass}`}>
+                            {mask(formatCurrency(availableLimit, card.currency, locale))}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="w-full bg-muted/50 rounded-full h-1.5 overflow-hidden border border-border/30 relative z-10">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-1000 ease-out ${progress > 90 ? 'bg-rose-500' : progress > 70 ? 'bg-amber-500' : 'bg-primary'}`}
+                          style={{ width: `${Math.min(100, progress)}%` }}
+                        />
+                      </div>
+                      {totalLimit > 0 && (
+                        <div className="mt-1 text-right">
+                          <span className="text-[8px] font-medium text-muted-foreground">{Math.round(progress)}% USADO</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
       </div>
+      {/* Anomaly Alerts (Temporarily removed per user request) */}
 
       {/* Charts: Category Spending Bars + Balance Flow */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
@@ -595,6 +959,56 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+
+        {/* Goals Widget */}
+        {goalsList && goalsList.filter((g: Goal) => !g.is_completed).length > 0 && (
+          <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center">
+                  <Target className="w-4 h-4 text-indigo-500" />
+                </div>
+                <h3 className="text-sm font-bold text-foreground">Metas Ativas</h3>
+              </div>
+              <Link to="/goals" className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
+                Ver todas →
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {goalsList.filter((g: Goal) => !g.is_completed).slice(0, 3).map((goal: Goal) => {
+                const progress = Math.min(goal.progress, 100)
+                return (
+                  <Link
+                    key={goal.id}
+                    to="/goals"
+                    className="group flex items-center gap-3 p-3 rounded-xl bg-card/30 backdrop-blur-md border border-border/30 hover:border-border/60 hover:bg-card/50 transition-all duration-300 hover:shadow-md"
+                  >
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 transition-transform duration-300 group-hover:scale-110"
+                      style={{ background: `linear-gradient(135deg, ${goal.color}25, ${goal.color}10)` }}
+                    >
+                      {goal.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">{goal.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 rounded-full bg-muted/40 overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-1000"
+                            style={{ width: `${progress}%`, background: goal.color }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color: goal.color }}>
+                          {progress.toFixed(0)}%
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Cumulative Spending Comparison */}
         <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
@@ -677,7 +1091,7 @@ export default function DashboardPage() {
                   <Tooltip
                     formatter={(value, name) => [
                       value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(selectedMonth, locale).split(' ')[0] : monthLabel(prevMonth, locale).split(' ')[0],
+                      name === 'current' ? monthLabel(selectedMonth, locale).split(' ')[0] : name === 'projected' ? `${monthLabel(selectedMonth, locale).split(' ')[0]} (Proj)` : monthLabel(prevMonth, locale).split(' ')[0],
                     ]}
                     labelFormatter={(day) => t('dashboard.day', { day })}
                     contentStyle={{
@@ -695,6 +1109,16 @@ export default function DashboardPage() {
                     stroke="#10B981"
                     strokeWidth={2}
                     fill="url(#cumGrad)"
+                    dot={false}
+                    activeDot={{ r: 3, fill: '#10B981' }}
+                    connectNulls={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="projected"
+                    stroke="#10B981"
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
                     dot={false}
                     activeDot={{ r: 3, fill: '#10B981' }}
                     connectNulls={false}
@@ -783,6 +1207,22 @@ export default function DashboardPage() {
                                   {t('transactions.recurringBadge')}
                                 </span>
                               )}
+                              {!row.isProjected && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
+                                    if (tx) {
+                                      setQuickRuleTx(tx)
+                                      setQuickRuleOpen(true)
+                                    }
+                                  }}
+                                  className="p-1 text-muted-foreground/40 hover:text-primary hover:bg-primary/5 rounded transition-colors"
+                                  title="Criar regra para esta transação"
+                                >
+                                  <Wand2 size={12} />
+                                </button>
+                              )}
                             </div>
                             <p className="text-xs text-muted-foreground">{formatDate(row.date, locale)}</p>
                           </div>
@@ -827,6 +1267,29 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Spending Heatmap */}
+      <div className="bg-card rounded-xl border border-border shadow-sm mt-5 overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <p className="text-sm font-semibold text-foreground">{t('dashboard.heatmapTitle')}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.heatmapDesc')}</p>
+        </div>
+        <div className="p-4 overflow-x-auto">
+          {heatmapLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : heatmapData && heatmapData.length > 0 ? (
+            <HeatmapGrid data={heatmapData} locale={locale} currency={userCurrency} privacyMode={privacyMode}
+              onDayClick={(date) => setDrillDown({
+                title: t('dashboard.drillDownDay', { date: new Date(date + 'T00:00:00').toLocaleDateString(locale) }),
+                from: date,
+                to: date,
+              })}
+            />
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-8">{t('dashboard.noData')}</p>
+          )}
+        </div>
+      </div>
+
       <TransactionDrillDown
         filter={drillDown}
         onClose={() => setDrillDown(null)}
@@ -848,6 +1311,12 @@ export default function DashboardPage() {
         loading={updateMutation.isPending || deleteMutation.isPending}
         error={updateMutation.error ? extractApiError(updateMutation.error) : deleteMutation.error ? extractApiError(deleteMutation.error) : null}
         isSynced={!!editingTx?.external_id}
+      />
+
+      <QuickRuleDialog
+        open={quickRuleOpen}
+        onClose={() => { setQuickRuleOpen(false); setQuickRuleTx(null) }}
+        transaction={quickRuleTx}
       />
     </div>
   )

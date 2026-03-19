@@ -4,8 +4,13 @@ from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.models.account import Account
 from app.models.transaction import Transaction
+
+# Descriptions that Pluggy uses for bill payments on the credit card side
+_BILL_PAYMENT_DESCRIPTIONS = {"pagamento recebido", "pagamento efetuado", "pagamento"}
 
 
 async def detect_transfer_pairs(
@@ -21,15 +26,21 @@ async def detect_transfer_pairs(
     2. For each debit, find an unpaired credit with: same user, different account,
        same absolute amount, date within ±tolerance days
     3. Greedy closest-date-first matching; each tx can only pair once
+    4. If a credit lands on a credit_card account, rename generic descriptions
+       to "Pagamento de fatura" for correct display.
 
     Returns the number of pairs created.
     """
-    # Load candidate debits
-    debit_query = select(Transaction).where(
-        Transaction.user_id == user_id,
-        Transaction.type == "debit",
-        Transaction.transfer_pair_id.is_(None),
-        Transaction.source != "opening_balance",
+    # Load candidate debits (with account info for type checking)
+    debit_query = (
+        select(Transaction)
+        .options(selectinload(Transaction.account))
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.type == "debit",
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.source != "opening_balance",
+        )
     )
     if candidate_ids:
         debit_query = debit_query.where(Transaction.id.in_(candidate_ids))
@@ -40,12 +51,16 @@ async def detect_transfer_pairs(
     if not debits:
         return 0
 
-    # Load all unpaired credits for the user (potential partners)
-    credit_query = select(Transaction).where(
-        Transaction.user_id == user_id,
-        Transaction.type == "credit",
-        Transaction.transfer_pair_id.is_(None),
-        Transaction.source != "opening_balance",
+    # Load all unpaired credits for the user (with account info)
+    credit_query = (
+        select(Transaction)
+        .options(selectinload(Transaction.account))
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.type == "credit",
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.source != "opening_balance",
+        )
     )
     credit_result = await session.execute(credit_query)
     credits = list(credit_result.scalars().all())
@@ -90,7 +105,21 @@ async def detect_transfer_pairs(
             paired_credit_ids.add(best_match.id)
             pairs_created += 1
 
+            # If the credit lands on a credit_card, relabel as bill payment
+            _relabel_bill_payment(debit, best_match)
+
     return pairs_created
+
+
+def _relabel_bill_payment(debit: Transaction, credit: Transaction) -> None:
+    """If one side of the pair is a credit_card account, rename generic
+    descriptions to 'Pagamento de fatura' for correct display."""
+    if credit.account and credit.account.type == "credit_card":
+        if credit.description.strip().lower() in _BILL_PAYMENT_DESCRIPTIONS:
+            credit.description = "Pagamento de fatura"
+    elif debit.account and debit.account.type == "credit_card":
+        if debit.description.strip().lower() in _BILL_PAYMENT_DESCRIPTIONS:
+            debit.description = "Pagamento de fatura"
 
 
 async def unlink_transfer_pair(

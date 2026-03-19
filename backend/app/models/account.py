@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,10 +23,14 @@ class Account(Base):
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card
+    custom_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    sort_order: Mapped[int] = mapped_column(default=0)
+    account_number: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="BRL")
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    credit_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     connection: Mapped[Optional["BankConnection"]] = relationship(back_populates="accounts")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account", cascade="all, delete-orphan")

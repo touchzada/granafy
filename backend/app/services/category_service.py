@@ -26,6 +26,12 @@ DEFAULT_CATEGORIES_I18N = {
     "donations":     {"en": "Donations",        "pt-BR": "Doações",             "icon": "heart-handshake",  "color": "#D946EF"},
     "personal_care": {"en": "Personal Care",    "pt-BR": "Cuidados Pessoais",   "icon": "scissors",         "color": "#F472B6"},
     "taxes":         {"en": "Taxes & Fees",     "pt-BR": "Impostos & Taxas",    "icon": "landmark",         "color": "#78716C"},
+    "pets":          {"en": "Pets",             "pt-BR": "Pets",                "icon": "paw-print",        "color": "#854D0E"},
+    "delivery":      {"en": "Delivery",         "pt-BR": "Delivery",            "icon": "bike",             "color": "#DC2626"},
+    "investments":   {"en": "Investments",      "pt-BR": "Investimentos",       "icon": "trending-up",      "color": "#0D9488"},
+    "insurance":     {"en": "Insurance",        "pt-BR": "Seguros",             "icon": "shield-check",     "color": "#7C3AED"},
+    "bills":         {"en": "Bills & Invoices", "pt-BR": "Contas & Faturas",    "icon": "receipt",          "color": "#475569"},
+    "internet_tv":   {"en": "Internet & Streaming", "pt-BR": "Internet & Streaming", "icon": "wifi",        "color": "#2563EB"},
     "other":         {"en": "Other",         "pt-BR": "Outros",         "icon": "circle-help",      "color": "#6B7280"},
 }
 

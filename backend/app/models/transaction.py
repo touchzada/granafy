@@ -40,3 +40,12 @@ class Transaction(Base):
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()
     import_log: Mapped[Optional["ImportLog"]] = relationship(back_populates="transactions")
+
+    @property
+    def installments(self) -> Optional[str]:
+        if not self.raw_data:
+            return None
+        cc_meta = self.raw_data.get("creditCardMetadata")
+        if cc_meta and cc_meta.get("installmentNumber") and cc_meta.get("totalInstallments"):
+            return f"{cc_meta.get('installmentNumber')}/{cc_meta.get('totalInstallments')}"
+        return None

@@ -27,6 +27,10 @@ async def get_transactions(
     uncategorized: bool = False,
     txn_type: Optional[str] = None,
     skip_pagination: bool = False,
+    min_amount: Optional[float] = None,
+    max_amount: Optional[float] = None,
+    sort_by: str = "date",
+    sort_dir: str = "desc",
 ) -> tuple[list[Transaction], int]:
     # Base query: user's own transactions (manual or via account)
     base_query = (
@@ -71,13 +75,22 @@ async def get_transactions(
                 Transaction.notes.ilike(term),
             )
         )
+    if min_amount is not None:
+        base_query = base_query.where(Transaction.amount >= min_amount)
+    if max_amount is not None:
+        base_query = base_query.where(Transaction.amount <= max_amount)
 
     # Get total count
     count_query = select(func.count()).select_from(base_query.subquery())
     total = await session.scalar(count_query)
 
     # Apply ordering (and pagination unless skipped)
-    query = base_query.order_by(Transaction.date.desc(), Transaction.created_at.desc())
+    sort_col = getattr(Transaction, sort_by, Transaction.date)
+    if sort_dir == "asc":
+        query = base_query.order_by(sort_col.asc(), Transaction.created_at.asc())
+    else:
+        query = base_query.order_by(sort_col.desc(), Transaction.created_at.desc())
+        
     if not skip_pagination:
         query = query.offset((page - 1) * limit).limit(limit)
 

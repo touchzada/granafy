@@ -387,7 +387,7 @@ async def test_install_rule_pack_br(session: AsyncSession, test_user):
     assert len(rules) > 0
 
     names = {r.name for r in rules}
-    assert "iFood / Rappi" in names
+    assert "99 Food / Delivery Apps" in names
 
 
 @pytest.mark.asyncio

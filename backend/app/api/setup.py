@@ -25,6 +25,8 @@ class CreateAdminRequest(BaseModel):
     language: str = "pt-BR"
 
 
+from app.services.rule_service import create_default_rules
+
 @router.get("/status", response_model=SetupStatus)
 async def get_setup_status(session: AsyncSession = Depends(get_async_session)):
     result = await session.execute(select(func.count(User.id)))
@@ -75,6 +77,9 @@ async def create_admin(
     )
     db_session.add(wallet)
     await db_session.commit()
+    
+    # Create default rule taxonomy
+    await create_default_rules(db_session, user.id, body.language)
 
     # Refresh user to get updated preferences for token generation
     await db_session.refresh(user)

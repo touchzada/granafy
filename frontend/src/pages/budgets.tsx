@@ -14,11 +14,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import type { Budget } from '@/types'
-import { Pencil, Trash2, Plus, Repeat, CalendarIcon } from 'lucide-react'
-import { format } from 'date-fns'
-import { ptBR, enUS } from 'date-fns/locale'
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
+import { Pencil, Trash2, Plus, Repeat } from 'lucide-react'
+import { DatePickerGranafy } from '@/components/date-picker-granafy'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -59,8 +56,6 @@ export default function BudgetsPage() {
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const queryClient = useQueryClient()
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
-  const [monthCalOpen, setMonthCalOpen] = useState(false)
-  const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
   const monthParam = `${selectedMonth}-01`
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Budget | null>(null)
@@ -139,30 +134,12 @@ export default function BudgetsPage() {
                 setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
               }}
             >‹</button>
-            <Popover open={monthCalOpen} onOpenChange={setMonthCalOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer"
-                >
-                  <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {monthTitle}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  locale={dateFnsLocale}
-                  selected={new Date(`${selectedMonth}-01T00:00:00`)}
-                  defaultMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onSelect={(date) => {
-                    if (!date) return
-                    setSelectedMonth(format(date, 'yyyy-MM'))
-                    setMonthCalOpen(false)
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
+            <DatePickerGranafy
+              value={`${selectedMonth}-01`}
+              onChange={(v) => setSelectedMonth(v.substring(0, 7))}
+              compact
+              alignPopover="center"
+            />
             <button
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
               onClick={() => {

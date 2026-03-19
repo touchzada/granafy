@@ -112,3 +112,20 @@ async def apply_all_rules(
     """Re-apply all active rules to all existing transactions."""
     count = await rule_service.apply_all_rules(session, user.id)
     return {"applied": count}
+
+
+@router.post("/quick-create", response_model=RuleRead)
+async def quick_create_rule(
+    data: rule_service.QuickRuleCreate,
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user),
+):
+    """Quickly create or update a rule from a transaction."""
+    try:
+        return await rule_service.quick_create_rule(session, user.id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except DuplicateRuleError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A rule with this name already exists")
+    return {"deleted": deleted_count}
+

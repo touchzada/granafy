@@ -15,6 +15,18 @@ from app.schemas.transaction import TransactionBase
 from app.services.rule_service import apply_rules_to_transaction
 
 
+def detect_ofx_account_type(content: bytes) -> str:
+    """Detect if OFX file is credit card or bank account.
+
+    Nubank exports credit card statements with CREDITCARDMSGSRSV1/CCSTMTRS tags,
+    while NuConta (checking) uses BANKMSGSRSV1/STMTRS tags.
+    """
+    text = content.decode('utf-8', errors='replace')
+    if '<CREDITCARDMSGSRSV1>' in text or '<CCSTMTRS>' in text:
+        return 'credit_card'
+    return 'checking'
+
+
 def parse_ofx(content: bytes) -> list[TransactionBase]:
     """Parse OFX file content and return transactions."""
     ofx = OfxParser.parse(io.BytesIO(content))
@@ -249,8 +261,9 @@ def parse_csv(
 
         # Parse amount
         if use_split:
-            inflow_str = row.get(inflow_col, '').strip().replace(',', '.').replace('R$', '').strip()
-            outflow_str = row.get(outflow_col, '').strip().replace(',', '.').replace('R$', '').strip()
+            inflow_str = normalize_amount(row.get(inflow_col, ""))
+            outflow_str = normalize_amount(row.get(outflow_col, ""))
+
             try:
                 inflow = Decimal(inflow_str) if inflow_str else Decimal('0')
             except Exception:
@@ -269,7 +282,8 @@ def parse_csv(
             else:
                 continue  # Skip rows with no amount
         else:
-            amount_str = row[amount_col].strip().replace(',', '.').replace('R$', '').strip()
+            amount_str = normalize_amount(row[amount_col])
+
             try:
                 amount = Decimal(amount_str)
             except Exception:
@@ -367,3 +381,24 @@ async def import_transactions(
 
     await session.commit()
     return imported, skipped, import_log.id
+
+def normalize_amount(amount_str: str) -> str:
+    """
+    Normalize monetary string into a standard decimal format compatible with Decimal.
+
+    Example:
+        1.442,20 -> 1442.20
+        1,442.20 -> 1442.20
+    """
+
+    amount_str = amount_str.replace('R$', '').strip()
+
+    if ',' in amount_str and '.' in amount_str:
+        if amount_str.rfind(',') > amount_str.rfind('.'):
+            amount_str = amount_str.replace('.', '').replace(',', '.')
+        else:
+            amount_str = amount_str.replace(',', '')
+    elif ',' in amount_str:
+        amount_str = amount_str.replace(',', '.')
+
+    return amount_str

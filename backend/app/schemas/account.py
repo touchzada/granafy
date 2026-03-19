@@ -23,6 +23,8 @@ class AccountCreate(BaseModel):
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
+    custom_name: Optional[str] = None
+    sort_order: Optional[int] = None
     type: Optional[str] = None
     balance: Optional[Decimal] = None
     balance_date: Optional[date] = None
@@ -33,6 +35,10 @@ class AccountRead(AccountBase):
     user_id: uuid.UUID
     connection_id: Optional[uuid.UUID] = None
     external_id: Optional[str] = None
+    custom_name: Optional[str] = None
+    sort_order: int = 0
+    account_number: Optional[str] = None
+    credit_data: Optional[dict] = None
     current_balance: float = 0.0
     previous_balance: Optional[float] = None
     is_closed: bool = False

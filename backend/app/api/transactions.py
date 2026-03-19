@@ -14,6 +14,7 @@ from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.transaction import BulkCategorizeRequest, TransactionCreate, TransactionRead, TransactionUpdate
 from app.services import transaction_service
+from app.services.transfer_detection_service import detect_transfer_pairs
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -31,6 +32,10 @@ async def list_transactions(
     category_id: Optional[uuid.UUID] = Query(None),
     from_date: Optional[date] = Query(None, alias="from"),
     to_date: Optional[date] = Query(None, alias="to"),
+    min_amount: Optional[float] = Query(None),
+    max_amount: Optional[float] = Query(None),
+    sort_by: Optional[str] = Query("date"),
+    sort_dir: Optional[str] = Query("desc"),
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
@@ -43,6 +48,7 @@ async def list_transactions(
     transactions, total = await transaction_service.get_transactions(
         session, user.id, account_id, category_id, from_date, to_date, page, limit,
         include_opening_balance, search=q, uncategorized=uncategorized, txn_type=type,
+        min_amount=min_amount, max_amount=max_amount, sort_by=sort_by, sort_dir=sort_dir,
     )
     return PaginatedTransactions(items=transactions, total=total, page=page, limit=limit)
 
@@ -53,6 +59,10 @@ async def export_transactions(
     category_id: Optional[uuid.UUID] = Query(None),
     from_date: Optional[date] = Query(None, alias="from"),
     to_date: Optional[date] = Query(None, alias="to"),
+    min_amount: Optional[float] = Query(None),
+    max_amount: Optional[float] = Query(None),
+    sort_by: Optional[str] = Query("date"),
+    sort_dir: Optional[str] = Query("desc"),
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
@@ -62,6 +72,7 @@ async def export_transactions(
     transactions, _ = await transaction_service.get_transactions(
         session, user.id, account_id, category_id, from_date, to_date,
         search=q, uncategorized=uncategorized, txn_type=type, skip_pagination=True,
+        min_amount=min_amount, max_amount=max_amount, sort_by=sort_by, sort_dir=sort_dir,
     )
 
     output = io.StringIO()
@@ -102,6 +113,16 @@ async def bulk_categorize(
         session, user.id, data.transaction_ids, data.category_id
     )
     return {"updated": count}
+
+
+@router.post("/detect-transfers")
+async def detect_transfers(
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user),
+):
+    count = await detect_transfer_pairs(session, user.id)
+    await session.commit()
+    return {"paired_count": count}
 
 
 @router.get("/{transaction_id}", response_model=TransactionRead)

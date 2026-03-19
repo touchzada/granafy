@@ -1,12 +1,21 @@
 import { useSyncExternalStore, useCallback } from 'react'
 
-const STORAGE_KEY = 'privacyMode'
+export type PrivacyState = 'visible' | 'blurred' | 'hidden'
+
+const STORAGE_KEY = 'privacyModeState'
 const MASK = '\u2022\u2022\u2022\u2022\u2022'
 
 const listeners = new Set<() => void>()
 
-function getSnapshot(): boolean {
-  return localStorage.getItem(STORAGE_KEY) === 'true'
+function getSnapshot(): PrivacyState {
+  const val = localStorage.getItem(STORAGE_KEY)
+  if (val === 'blurred' || val === 'hidden') return val
+  if (localStorage.getItem('privacyMode') === 'true') {
+     localStorage.removeItem('privacyMode')
+     localStorage.setItem(STORAGE_KEY, 'hidden')
+     return 'hidden'
+  }
+  return 'visible'
 }
 
 function subscribe(cb: () => void) {
@@ -19,18 +28,21 @@ function notify() {
 }
 
 export function usePrivacyMode() {
-  const privacyMode = useSyncExternalStore(subscribe, getSnapshot, () => false)
+  const privacyMode = useSyncExternalStore(subscribe, getSnapshot, () => 'visible' as PrivacyState)
 
   const togglePrivacyMode = useCallback(() => {
-    const next = !getSnapshot()
-    localStorage.setItem(STORAGE_KEY, String(next))
+    const current = getSnapshot()
+    const next: PrivacyState = current === 'visible' ? 'blurred' : current === 'blurred' ? 'hidden' : 'visible'
+    localStorage.setItem(STORAGE_KEY, next)
     notify()
   }, [])
 
   const mask = useCallback(
-    (value: string) => (privacyMode ? MASK : value),
+    (value: string) => (privacyMode === 'hidden' ? MASK : value),
     [privacyMode],
   )
+  
+  const blurClass = privacyMode === 'blurred' ? 'blur-[4px] opacity-70 select-none transition-all duration-300' : 'transition-all duration-300'
 
-  return { privacyMode, togglePrivacyMode, mask, MASK } as const
+  return { privacyMode, togglePrivacyMode, mask, blurClass, MASK, rawPrivacyMode: privacyMode } as const
 }

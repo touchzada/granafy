@@ -12,6 +12,8 @@ class AccountData:
     type: str  # checking, savings, credit_card
     balance: Decimal
     currency: str
+    credit_data: Optional[dict] = None
+    account_number: Optional[str] = None
 
 
 @dataclass

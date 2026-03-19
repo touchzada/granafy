@@ -20,7 +20,18 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
     op = condition.get("op", "")
     value = condition.get("value")
 
-    tx_val = getattr(tx, field, None)
+    # Support nested dictionary lookups, e.g., "raw_data.description"
+    if "." in field:
+        parts = field.split(".")
+        tx_val = getattr(tx, parts[0], None)
+        for part in parts[1:]:
+            if isinstance(tx_val, dict):
+                tx_val = tx_val.get(part)
+            else:
+                tx_val = None
+                break
+    else:
+        tx_val = getattr(tx, field, None)
 
     # String operators
     if op in ("contains", "not_contains", "starts_with", "ends_with", "equals", "not_equals", "regex"):

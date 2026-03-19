@@ -10,7 +10,7 @@ from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
-from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory
+from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory, FinancialScore, HeatmapDay
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_total_asset_value
 
@@ -63,7 +63,7 @@ async def _get_recurring_projections(
 
 async def get_summary(
     session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None,
-    balance_date: Optional[date] = None,
+    balance_date: Optional[date] = None, account_id: Optional[uuid.UUID] = None,
 ) -> DashboardSummary:
     if not month:
         month = date.today().replace(day=1)
@@ -81,10 +81,10 @@ async def get_summary(
         # Current or future month: today
         cutoff = today
 
-    total_balance = await _total_balance_by_currency(session, user_id, cutoff)
+    total_balance, cash_balance, credit_balance = await _total_balance_by_currency(session, user_id, cutoff, account_id=account_id)
 
     # For current/future months, project the total balance by adding recurring
-    # projections from cutoff+1 through month_end.
+    # projections from cutoff+1 through month_end. (Assuming all projections go to cash)
     if month_end > cutoff:
         projection_start = cutoff + timedelta(days=1)
         balance_projections = await _get_recurring_projections(
@@ -93,23 +93,29 @@ async def get_summary(
         for proj in balance_projections:
             signed = proj["amount"] if proj["type"] == "credit" else -proj["amount"]
             total_balance[proj["currency"]] = total_balance.get(proj["currency"], 0.0) + signed
+            cash_balance[proj["currency"]] = cash_balance.get(proj["currency"], 0.0) + signed
 
     # Monthly income and expenses — exclude opening_balance so initial deposits
     # don't inflate the month's income figure. Also exclude transfer pairs.
+    monthly_filters = [
+        Transaction.user_id == user_id,
+        Account.is_closed == False,
+        Account.type != "credit_card",  # Exclude credit card expenses
+        Transaction.date >= month_start,
+        Transaction.date < month_end,
+        Transaction.source != "opening_balance",
+    ]
+    if not account_id:
+        monthly_filters.append(Transaction.transfer_pair_id.is_(None))
+    if account_id:
+        monthly_filters.append(Transaction.account_id == account_id)
     monthly_result = await session.execute(
         select(
             func.sum(case((Transaction.type == "credit", Transaction.amount), else_=0)),
             func.sum(case((Transaction.type == "debit", Transaction.amount), else_=0)),
         )
         .join(Account, Transaction.account_id == Account.id)
-        .where(
-            Transaction.user_id == user_id,
-            Account.is_closed == False,
-            Transaction.date >= month_start,
-            Transaction.date < month_end,
-            Transaction.source != "opening_balance",
-            Transaction.transfer_pair_id.is_(None),
-        )
+        .where(*monthly_filters)
     )
     monthly_row = monthly_result.one()
     monthly_income = float(monthly_row[0] or 0)
@@ -152,12 +158,15 @@ async def get_summary(
     # Asset values
     assets_value = await get_total_asset_value(session, user_id)
 
-    # Add asset values to total balance
+    # Add asset values to total balance and cash balance
     for currency, amount in assets_value.items():
         total_balance[currency] = total_balance.get(currency, 0.0) + amount
+        cash_balance[currency] = cash_balance.get(currency, 0.0) + amount
 
     return DashboardSummary(
         total_balance=total_balance,
+        cash_balance=cash_balance,
+        credit_balance=credit_balance,
         balance_date=cutoff.isoformat(),
         monthly_income=monthly_income,
         monthly_expenses=abs(monthly_expenses),
@@ -169,14 +178,25 @@ async def get_summary(
 
 
 async def get_spending_by_category(
-    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None
+    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None,
+    account_id: Optional[uuid.UUID] = None,
 ) -> list[SpendingByCategory]:
     if not month:
         month = date.today().replace(day=1)
 
     month_start, month_end = _month_range(month)
 
-    # Real transactions grouped by category (exclude transfer pairs and closed accounts)
+    spending_filters = [
+        Transaction.user_id == user_id,
+        Account.is_closed == False,
+        Transaction.type == "debit",
+        Transaction.date >= month_start,
+        Transaction.date < month_end,
+    ]
+    if not account_id:
+        spending_filters.append(Transaction.transfer_pair_id.is_(None))
+    if account_id:
+        spending_filters.append(Transaction.account_id == account_id)
     result = await session.execute(
         select(
             Category.id,
@@ -188,14 +208,7 @@ async def get_spending_by_category(
         .select_from(Transaction)
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
-        .where(
-            Transaction.user_id == user_id,
-            Account.is_closed == False,
-            Transaction.type == "debit",
-            Transaction.date >= month_start,
-            Transaction.date < month_end,
-            Transaction.transfer_pair_id.is_(None),
-        )
+        .where(*spending_filters)
         .group_by(Category.id, Category.name, Category.icon, Category.color)
         .order_by(func.sum(Transaction.amount).desc())
     )
@@ -407,22 +420,61 @@ async def _account_balance_at(
 
 
 async def _total_balance_by_currency(
-    session: AsyncSession, user_id: uuid.UUID, cutoff: date
-) -> dict[str, float]:
-    """Get total balance across all open accounts at a date, grouped by currency."""
+    session: AsyncSession, user_id: uuid.UUID, cutoff: date,
+    account_id: Optional[uuid.UUID] = None,
+) -> tuple[dict[str, float], dict[str, float], dict[str, dict]]:
+    """Get total balance across all open accounts at a date, grouped by currency.
+    Returns (total_balance, cash_balance, credit_balance)."""
     accounts = await _get_open_accounts(session, user_id)
     totals: dict[str, float] = {}
+    cash: dict[str, float] = {}
+    credit: dict[str, dict] = {}
+    
+    target_connection_id = None
+    if account_id:
+        # Resolve connection_id for the selected account
+        acc_result = await session.execute(select(Account.connection_id).where(Account.id == account_id))
+        target_connection_id = acc_result.scalar_one_or_none()
+
     for account in accounts:
+        # If filtering by account, we actually want to show data for the whole 'Bank' (connection)
+        # so that credit cards from the same bank aren't hidden when the checking account is selected.
+        if account_id and account.id != account_id:
+            if not target_connection_id or account.connection_id != target_connection_id:
+                continue
+
         bal = await _account_balance_at(session, account, cutoff)
-        totals[account.currency] = totals.get(account.currency, 0) + bal
-    return totals
+
+        totals[account.currency] = totals.get(account.currency, 0.0) + bal
+        if account.type == "credit_card":
+            if account.currency not in credit:
+                credit[account.currency] = {"total_used": 0.0, "current_bill": 0.0, "available_limit": 0.0}
+            
+            credit[account.currency]["total_used"] += bal
+            
+            if account.credit_data:
+                # Pluggy's availableCreditLimit
+                limit = account.credit_data.get("availableCreditLimit", 0.0)
+                if limit is None:
+                    limit = 0.0
+                credit[account.currency]["available_limit"] += float(limit)
+                
+                # We can try tracking current_bill from other fields if possible, or leave 0 to compute in frontend
+                # For now, we will add whatever is in balance or minimumPayment just as placeholder, 
+                # but the user requested fatura atual. If there is no exact current bill returned by pluggy API, 
+                # we'll approximate or use total_used if needed later on the frontend.
+                
+        else:
+            cash[account.currency] = cash.get(account.currency, 0.0) + bal
+
+    return totals, cash, credit
 
 
 async def _balance_at(
     session: AsyncSession, user_id: uuid.UUID, cutoff: date
 ) -> float:
     """Get total balance across all open accounts at a specific date (single currency sum)."""
-    totals = await _total_balance_by_currency(session, user_id, cutoff)
+    totals, _, _ = await _total_balance_by_currency(session, user_id, cutoff)
     return sum(totals.values())
 
 
@@ -487,10 +539,13 @@ async def get_balance_history(
     balance = current_start
     for day in range(1, days_in_month + 1):
         balance += current_deltas.get(day, 0) + proj_deltas.get(day, 0)
-        current_daily.append(DailyBalance(
-            day=day,
-            balance=round(balance, 2) if day <= cutoff_day else None,
-        ))
+        
+        if day < cutoff_day:
+            current_daily.append(DailyBalance(day=day, balance=round(balance, 2), projected_balance=None))
+        elif day == cutoff_day:
+            current_daily.append(DailyBalance(day=day, balance=round(balance, 2), projected_balance=round(balance, 2)))
+        else:
+            current_daily.append(DailyBalance(day=day, balance=None, projected_balance=round(balance, 2)))
 
     # Build previous month daily balances
     prev_daily = []
@@ -500,3 +555,135 @@ async def get_balance_history(
         prev_daily.append(DailyBalance(day=day, balance=round(balance, 2)))
 
     return BalanceHistory(current=current_daily, previous=prev_daily)
+
+
+async def get_financial_score(
+    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None
+) -> FinancialScore:
+    if not month:
+        month = date.today().replace(day=1)
+        
+    summary = await get_summary(session, user_id, month)
+    
+    # TP (Taxa de Poupança)
+    income = summary.monthly_income
+    expenses = summary.monthly_expenses
+    tp = ((income - expenses) / income * 100) if income > 0 else 0.0
+    
+    # IC (Índice de Comprometimento com custos fixos)
+    projected = await get_projected_transactions(session, user_id, month)
+    fixed_expenses = sum(p.amount for p in projected if p.type == "debit")
+    ic = (fixed_expenses / income * 100) if income > 0 else 0.0
+    
+    # Trend (Tendência comparando o mês atual/ultimo relatorio com o anterior)
+    trend_data = await get_monthly_trend(session, user_id, 3)
+    trend_score = 50
+    if len(trend_data) >= 2:
+        if trend_data[0].expenses <= trend_data[1].expenses:
+            trend_score = 80 # Doing better
+        else:
+            trend_score = 30 # Spending more
+            
+    # Calculate Final Score (0-100)
+    # 30% TP, 25% IC, 20% Trend, 25% Base/Diversification
+    tp_points = max(min(tp, 30), 0)
+    ic_points = max(25 - (ic / 100 * 25), 0) if ic <= 100 else 0
+    trend_points = (trend_score / 100) * 20
+    
+    uncat_penalty = 10 if summary.pending_categorization > 10 else 0
+    
+    final_score = int(tp_points + ic_points + trend_points + 25 - uncat_penalty)
+    final_score = max(min(final_score, 100), 0)
+    
+    if final_score >= 80:
+        level = "Excelente"
+    elif final_score >= 65:
+        level = "Boa"
+    elif final_score >= 50:
+        level = "Atenção"
+    else:
+        level = "Crítica"
+        
+    return FinancialScore(
+        score=final_score,
+        health_level=level,
+        savings_rate=round(float(tp), 1),
+        commitment_index=round(float(ic), 1)
+    )
+
+async def get_spending_heatmap(
+    session: AsyncSession, user_id: uuid.UUID, months: int = 6
+) -> list[HeatmapDay]:
+    from datetime import date, timedelta
+    today = date.today()
+    
+    # Calculate start date ~6 months ago, first day of that month
+    start_date = (today.replace(day=1) - timedelta(days=months * 30)).replace(day=1)
+    
+    result = await session.execute(
+        select(
+            func.date(Transaction.date),
+            func.sum(Transaction.amount)
+        )
+        .join(Account, Transaction.account_id == Account.id)
+        .where(
+            Transaction.user_id == user_id,
+            Account.is_closed == False,
+            Transaction.type == "debit",
+            Transaction.date >= start_date,
+            Transaction.date <= today,
+            Transaction.source != "opening_balance",
+            Transaction.transfer_pair_id.is_(None),
+        )
+        .group_by(func.date(Transaction.date))
+        .order_by(func.date(Transaction.date))
+    )
+    
+    daily_totals: dict[date, float] = {row[0]: float(row[1] or 0) for row in result.all()}
+    
+    # Fill in all dates with 0
+    all_days = []
+    current_date = start_date
+    while current_date <= today:
+        amt = daily_totals.get(current_date, 0.0)
+        all_days.append({"date": current_date.isoformat(), "amount": amt})
+        current_date += timedelta(days=1)
+        
+    # Calculate levels. We want to exclude 0 from calculating percentiles/quartiles
+    non_zero_amounts = [d["amount"] for d in all_days if d["amount"] > 0]
+    
+    if not non_zero_amounts:
+        return [HeatmapDay(date=d["date"], amount=d["amount"], level=0) for d in all_days]
+        
+    non_zero_amounts.sort()
+    
+    def get_percentile(data, percentile):
+        k = (len(data) - 1) * percentile
+        f = int(k)
+        c = int(k) + 1 if k > int(k) else int(k)
+        if f == c:
+            return data[f]
+        d0 = data[f] * (c - k)
+        d1 = data[c] * (k - f)
+        return d0 + d1
+
+    q1 = get_percentile(non_zero_amounts, 0.25)
+    q2 = get_percentile(non_zero_amounts, 0.50)
+    q3 = get_percentile(non_zero_amounts, 0.75)
+    
+    heatmap_res = []
+    for d in all_days:
+        amt = d["amount"]
+        if amt == 0:
+            lvl = 0
+        elif amt <= q1:
+            lvl = 1
+        elif amt <= q2:
+            lvl = 2
+        elif amt <= q3:
+            lvl = 3
+        else:
+            lvl = 4
+        heatmap_res.append(HeatmapDay(date=d["date"], amount=amt, level=lvl))
+        
+    return heatmap_res

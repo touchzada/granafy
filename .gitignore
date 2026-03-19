@@ -4,3 +4,9 @@
 .playwright-mcp/
 .claude
 docs/plans/
+extrato/
+my-skills/
+.agent/
+backups/
+redis/
+tools/

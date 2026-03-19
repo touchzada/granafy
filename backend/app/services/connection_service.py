@@ -12,35 +12,9 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
 from app.providers import get_provider
-from app.services.rule_service import apply_rules_to_transaction
+from app.services.rule_service import apply_rules_to_transaction, PLUGGY_CATEGORY_MAP
 from app.services.transfer_detection_service import detect_transfer_pairs
 
-settings = get_settings()
-
-PLUGGY_CATEGORY_MAP = {
-    "Eating out": "Alimentação",
-    "Restaurants": "Alimentação",
-    "Food": "Alimentação",
-    "Groceries": "Mercado",
-    "Supermarkets": "Mercado",
-    "Pharmacy": "Saúde",
-    "Health": "Saúde",
-    "Taxi and ride-hailing": "Transporte",
-    "Transport": "Transporte",
-    "Gas": "Transporte",
-    "Travel": "Transporte",
-    "Housing": "Moradia",
-    "Rent": "Moradia",
-    "Utilities": "Moradia",
-    "Entertainment": "Lazer",
-    "Leisure": "Lazer",
-    "Education": "Educação",
-    "Subscriptions": "Assinaturas",
-    "Online services": "Assinaturas",
-    "Transfer": "Transferências",
-    "Transfers": "Transferências",
-    "Wire transfers": "Transferências",
-}
 
 
 async def _match_pluggy_category(
@@ -144,6 +118,7 @@ async def handle_oauth_callback(
             type=acc_data.type,
             balance=acc_data.balance,
             currency=acc_data.currency,
+            credit_data=acc_data.credit_data,
         )
         session.add(account)
         await session.flush()
@@ -268,6 +243,9 @@ async def sync_connection(
             if account:
                 account.balance = acc_data.balance
                 account.name = acc_data.name
+                account.credit_data = acc_data.credit_data
+                if acc_data.account_number:
+                    account.account_number = acc_data.account_number
             else:
                 account = Account(
                     user_id=user_id,
@@ -277,6 +255,8 @@ async def sync_connection(
                     type=acc_data.type,
                     balance=acc_data.balance,
                     currency=acc_data.currency,
+                    credit_data=acc_data.credit_data,
+                    account_number=acc_data.account_number,
                 )
                 session.add(account)
                 await session.flush()

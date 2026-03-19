@@ -62,7 +62,7 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
     )
     if not include_closed:
         query = query.where(Account.is_closed == False)
-    query = query.order_by(Account.name)
+    query = query.order_by(Account.sort_order, Account.name)
     result = await session.execute(query)
 
     return [
@@ -72,9 +72,13 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
             "connection_id": acc.connection_id,
             "external_id": acc.external_id,
             "name": acc.name,
+            "custom_name": acc.custom_name,
+            "sort_order": acc.sort_order,
+            "account_number": acc.account_number,
             "type": acc.type,
             "balance": acc.balance,
             "currency": acc.currency,
+            "credit_data": acc.credit_data,
             # Connected CC: provider stores positive for debt → negate.
             # Manual accounts: transaction math already gives correct sign.
             "current_balance": float(acc.balance) * (-1 if acc.type == "credit_card" else 1) if acc.connection_id else float(current_balance or 0),
@@ -140,12 +144,15 @@ async def update_account(
     if not account:
         return None
 
-    # Only allow editing manual accounts
-    if account.connection_id is not None:
-        raise ValueError("Cannot edit bank-connected accounts")
-
     update_data = data.model_dump(exclude_unset=True)
     balance_date = update_data.pop("balance_date", None)
+
+    # Only allow editing certain fields for bank-connected accounts
+    if account.connection_id is not None:
+        allowed_keys = {"custom_name", "sort_order"}
+        for key in update_data.keys():
+            if key not in allowed_keys:
+                raise ValueError(f"Cannot edit {key} for bank-connected accounts")
 
     for key, value in update_data.items():
         setattr(account, key, value)

@@ -10,6 +10,7 @@ from app.models.budget import Budget
 from app.models.import_log import ImportLog
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
+from app.models.goal import Goal
 
 __all__ = [
     "User",

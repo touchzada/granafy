@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Securo"
+    "name": "Granafy"
   },
   "nav": {
     "dashboard": "Painel",
@@ -12,7 +12,9 @@
     "budgets": "Orçamentos",
     "settings": "Configurações",
     "recurring": "Recorrentes",
-    "assets": "Patrimônio"
+    "assets": "Patrimônio",
+    "goals": "Metas",
+    "advisor": "Conselheiro IA"
   },
   "auth": {
     "login": "Entrar",
@@ -31,7 +33,11 @@
     "greetingMorning": "Bom dia",
     "greetingAfternoon": "Boa tarde",
     "greetingEvening": "Boa noite",
-    "totalBalance": "Saldo Total",
+    "totalBalance": "Patrimônio Total",
+    "cashBalance": "Saldo em Contas",
+    "creditBalance": "Fatura de Cartões",
+    "allAccounts": "Todas as Contas",
+    "creditCards": "Cartões",
     "monthlyIncome": "Entradas do Mês",
     "monthlyExpenses": "Saídas do Mês",
     "pendingCategorization": "Sem Categoria",
@@ -58,14 +64,17 @@
     "drillDownTotal": "{{count}} transações · {{total}}",
     "drillDownEmpty": "Nenhuma transação encontrada",
     "drillDownClose": "Fechar",
-    "savingsRate": "Taxa de Economia",
+    "savingsRate": "Taxa de Poupança",
+    "healthScore": "Saúde Financeira",
     "spendingProjection": "Nesse ritmo, você gastará {{amount}} até o fim do mês",
     "uncategorizedCta": "{{count}} transações precisam ser categorizadas",
     "uncategorizedTotal": "{{amount}} no total",
     "categorizeNow": "Categorizar agora",
     "allCategorized": "Tudo em dia!",
     "allCategorizedDesc": "Todas as transações estão categorizadas",
-    "assetsValue": "Patrimônio"
+    "assetsValue": "Patrimônio",
+    "heatmapTitle": "Mapa de Calor de Gastos",
+    "heatmapDesc": "Visualize a intensidade dos seus gastos diários nos últimos 6 meses"
   },
   "transactions": {
     "title": "Transações",
@@ -429,7 +438,7 @@
     "show": "Mostrar valores"
   },
   "setup": {
-    "title": "Bem-vindo ao Securo",
+    "title": "Bem-vindo ao Granafy",
     "description": "Crie sua conta de administrador para começar.",
     "confirmPassword": "Confirmar senha",
     "createAdmin": "Criar Conta Admin",

@@ -57,6 +57,9 @@ export interface Account {
   connection_id: string | null
   external_id: string | null
   name: string
+  custom_name?: string | null
+  sort_order?: number
+  account_number?: string | null
   type: string
   balance: number
   current_balance: number
@@ -64,6 +67,15 @@ export interface Account {
   currency: string
   is_closed: boolean
   closed_at: string | null
+  credit_data?: {
+    creditLimit?: number
+    availableCreditLimit?: number
+    level?: string
+    brand?: string
+    balanceCloseDate?: string
+    balanceDueDate?: string
+    [key: string]: any
+  } | null
 }
 
 export interface AccountSummary {
@@ -90,6 +102,22 @@ export interface Transaction {
   payee: string | null
   notes: string | null
   transfer_pair_id: string | null
+  installments?: string
+}
+
+export interface Goal {
+  id: string
+  user_id: string
+  name: string
+  target_amount: number
+  current_amount: number
+  currency: string
+  target_date: string | null
+  account_id: string | null
+  icon: string
+  color: string
+  is_completed: boolean
+  progress: number
 }
 
 export interface RuleCondition {
@@ -113,6 +141,14 @@ export interface Rule {
   priority: number
   is_active: boolean
 }
+
+export interface QuickRuleCreate {
+  description: string
+  category_id: string
+  existing_rule_id?: string
+  apply_all?: boolean
+}
+
 
 export interface ImportLog {
   id: string
@@ -157,8 +193,16 @@ export interface ProjectedTransaction {
   category_color: string | null
 }
 
+export interface CreditCardOverview {
+  total_used: number
+  current_bill: number
+  available_limit: number
+}
+
 export interface DashboardSummary {
   total_balance: Record<string, number>
+  cash_balance: Record<string, number>
+  credit_balance: Record<string, CreditCardOverview>
   balance_date: string
   monthly_income: number
   monthly_expenses: number
@@ -186,6 +230,7 @@ export interface MonthlyTrend {
 export interface DailyBalance {
   day: number
   balance: number | null
+  projected_balance?: number | null
 }
 
 export interface BalanceHistory {
@@ -252,4 +297,17 @@ export interface PaginatedResponse<T> {
   total: number
   page: number
   limit: number
+}
+
+export interface FinancialScore {
+  score: number
+  health_level: string
+  savings_rate: number
+  commitment_index: number
+}
+
+export interface HeatmapDay {
+  date: string
+  amount: number
+  level: number
 }
