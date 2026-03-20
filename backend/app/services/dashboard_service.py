@@ -15,14 +15,22 @@ from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_total_asset_value
 
 
-def _month_range(month: date) -> tuple[date, date]:
-    """Return (month_start, month_end) for a given date."""
-    month_start = month.replace(day=1)
-    if month.month == 12:
-        month_end = month.replace(year=month.year + 1, month=1, day=1)
-    else:
-        month_end = month.replace(month=month.month + 1, day=1)
-    return month_start, month_end
+def _get_range_bounds(from_date: Optional[date] = None, to_date: Optional[date] = None) -> tuple[date, date]:
+    """Return (start, end) dates. end is exclusive."""
+    if not from_date:
+        from_date = date.today().replace(day=1)
+    if not to_date:
+        # Default to end of month if only from_date is provided, or current month end if none
+        if from_date.month == 12:
+            to_date = from_date.replace(year=from_date.year + 1, month=1, day=1)
+        else:
+            to_date = from_date.replace(month=from_date.month + 1, day=1)
+    return from_date, to_date
+
+
+def _map_date_to_day(txn_date: date, start_date: date) -> int:
+    """Map a date to a 1-based day index relative to start_date."""
+    return (txn_date - start_date).days + 1
 
 
 async def _get_recurring_projections(
@@ -62,33 +70,33 @@ async def _get_recurring_projections(
 
 
 async def get_summary(
-    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None,
-    balance_date: Optional[date] = None, account_id: Optional[uuid.UUID] = None,
+    session: AsyncSession, user_id: uuid.UUID, 
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    balance_date: Optional[date] = None, 
+    account_id: Optional[uuid.UUID] = None,
 ) -> DashboardSummary:
-    if not month:
-        month = date.today().replace(day=1)
-
-    month_start, month_end = _month_range(month)
+    start_date, end_date = _get_range_bounds(from_date, to_date)
     today = date.today()
 
     # Compute the effective cutoff date for balance calculation
     if balance_date:
         cutoff = balance_date
-    elif month_end <= today:
-        # Past month: last day of that month
-        cutoff = month_end - timedelta(days=1)
+    elif end_date <= today:
+        # Past period: last day of that period
+        cutoff = end_date - timedelta(days=1)
     else:
-        # Current or future month: today
+        # Current or future period: today
         cutoff = today
 
     total_balance, cash_balance, credit_balance = await _total_balance_by_currency(session, user_id, cutoff, account_id=account_id)
 
-    # For current/future months, project the total balance by adding recurring
-    # projections from cutoff+1 through month_end. (Assuming all projections go to cash)
-    if month_end > cutoff:
+    # For current/future periods, project the total balance by adding recurring
+    # projections from cutoff+1 through end_date. (Assuming all projections go to cash)
+    if end_date > cutoff:
         projection_start = cutoff + timedelta(days=1)
         balance_projections = await _get_recurring_projections(
-            session, user_id, projection_start, month_end
+            session, user_id, projection_start, end_date
         )
         for proj in balance_projections:
             signed = proj["amount"] if proj["type"] == "credit" else -proj["amount"]
@@ -101,8 +109,8 @@ async def get_summary(
         Transaction.user_id == user_id,
         Account.is_closed == False,
         Account.type != "credit_card",  # Exclude credit card expenses
-        Transaction.date >= month_start,
-        Transaction.date < month_end,
+        Transaction.date >= start_date,
+        Transaction.date < end_date,
         Transaction.source != "opening_balance",
     ]
     if not account_id:
@@ -122,7 +130,7 @@ async def get_summary(
     monthly_expenses = float(monthly_row[1] or 0)
 
     # Add virtual recurring projections
-    projections = await _get_recurring_projections(session, user_id, month_start, month_end)
+    projections = await _get_recurring_projections(session, user_id, start_date, end_date)
     for proj in projections:
         if proj["type"] == "credit":
             monthly_income += proj["amount"]
@@ -178,20 +186,19 @@ async def get_summary(
 
 
 async def get_spending_by_category(
-    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None,
+    session: AsyncSession, user_id: uuid.UUID,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
     account_id: Optional[uuid.UUID] = None,
 ) -> list[SpendingByCategory]:
-    if not month:
-        month = date.today().replace(day=1)
-
-    month_start, month_end = _month_range(month)
+    start_date, end_date = _get_range_bounds(from_date, to_date)
 
     spending_filters = [
         Transaction.user_id == user_id,
         Account.is_closed == False,
         Transaction.type == "debit",
-        Transaction.date >= month_start,
-        Transaction.date < month_end,
+        Transaction.date >= start_date,
+        Transaction.date < end_date,
     ]
     if not account_id:
         spending_filters.append(Transaction.transfer_pair_id.is_(None))
@@ -225,7 +232,7 @@ async def get_spending_by_category(
         }
 
     # Add virtual recurring projections (debit only)
-    projections = await _get_recurring_projections(session, user_id, month_start, month_end)
+    projections = await _get_recurring_projections(session, user_id, start_date, end_date)
     # We need category info for recurring projections — fetch categories
     cat_cache: dict[str, dict] = {}
     for proj in projections:
@@ -305,21 +312,20 @@ async def get_monthly_trend(
 
 
 async def get_projected_transactions(
-    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None
+    session: AsyncSession, user_id: uuid.UUID, 
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
 ) -> list[ProjectedTransaction]:
-    """Return virtual recurring transaction projections for a month,
+    """Return virtual recurring transaction projections for a range,
     enriched with description and category info for display."""
-    if not month:
-        month = date.today().replace(day=1)
-
-    month_start, month_end = _month_range(month)
+    start_date, end_date = _get_range_bounds(from_date, to_date)
 
     result = await session.execute(
         select(RecurringTransaction)
         .where(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < month_end,
+            RecurringTransaction.start_date < end_date,
         )
     )
     recurring_list = list(result.scalars().all())
@@ -341,8 +347,8 @@ async def get_projected_transactions(
             start=rec.next_occurrence,
             frequency=rec.frequency,
             end_date=rec.end_date,
-            range_start=month_start,
-            range_end=month_end,
+            range_start=start_date,
+            range_end=end_date,
         )
         cat_name, cat_icon, cat_color = cat_map.get(rec.category_id, (None, None, None)) if rec.category_id else (None, None, None)
         for occ_date in occurrences:
@@ -500,78 +506,108 @@ async def _daily_deltas(
 
 
 async def get_balance_history(
-    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None
+    session: AsyncSession, user_id: uuid.UUID, 
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
 ) -> BalanceHistory:
-    if not month:
-        month = date.today().replace(day=1)
-
-    month_start, month_end = _month_range(month)
-    prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
-    prev_month_end = month_start
+    start_date, end_date = _get_range_bounds(from_date, to_date)
+    
+    # Calculate previous range of same duration
+    duration = (end_date - start_date).days
+    prev_start = start_date - timedelta(days=duration)
+    prev_end = start_date
 
     today = date.today()
-    is_current = month_start.year == today.year and month_start.month == today.month
-    days_in_month = (month_end - month_start).days
-    cutoff_day = today.day if is_current else days_in_month
-
-    prev_days_in_month = (prev_month_end - prev_month_start).days
+    is_current = start_date <= today < end_date
+    
+    # For daily progression labels (1 to N)
+    if is_current:
+        cutoff_day = (today - start_date).days + 1
+    elif end_date <= today:
+        cutoff_day = duration + 1
+    else:
+        cutoff_day = 0
 
     # Starting balances
-    current_start = await _balance_at(session, user_id, month_start - timedelta(days=1))
-    prev_start = await _balance_at(session, user_id, prev_month_start - timedelta(days=1))
+    current_start_balance = await _balance_at(session, user_id, start_date - timedelta(days=1))
+    prev_start_balance = await _balance_at(session, user_id, prev_start - timedelta(days=1))
 
     # Daily deltas from real transactions
-    current_deltas = await _daily_deltas(session, user_id, month_start, month_end)
-    prev_deltas = await _daily_deltas(session, user_id, prev_month_start, prev_month_end)
+    current_deltas: dict[int, float] = {}
+    q = (select(Transaction.date, func.sum(_signed_balance_expr()))
+         .join(Account)
+         .where(
+            Transaction.user_id == user_id,
+            Account.is_closed == False,
+            Transaction.date >= start_date,
+            Transaction.date < end_date
+         )
+         .group_by(Transaction.date))
+    res = await session.execute(q)
+    for row in res.all():
+        current_deltas[_map_date_to_day(row[0], start_date)] = float(row[1] or 0)
 
-    # Recurring projections for future days of current month
+    prev_deltas: dict[int, float] = {}
+    q_prev = (select(Transaction.date, func.sum(_signed_balance_expr()))
+              .join(Account)
+              .where(
+                Transaction.user_id == user_id,
+                Account.is_closed == False,
+                Transaction.date >= prev_start,
+                Transaction.date < prev_end
+              )
+              .group_by(Transaction.date))
+    res_prev = await session.execute(q_prev)
+    for row in res_prev.all():
+        prev_deltas[_map_date_to_day(row[0], prev_start)] = float(row[1] or 0)
+
+    # Recurring projections for future days of current period
     proj_deltas: dict[int, float] = {}
-    if month_end > today:
-        proj_start = max(month_start, today + timedelta(days=1))
-        projections = await _get_recurring_projections(session, user_id, proj_start, month_end)
+    if end_date > today:
+        range_proj_start = max(start_date, today + timedelta(days=1))
+        projections = await _get_recurring_projections(session, user_id, range_proj_start, end_date)
         for proj in projections:
-            day = proj["date"].day
+            day_idx = _map_date_to_day(proj["date"], start_date)
             signed = proj["amount"] if proj["type"] == "credit" else -proj["amount"]
-            proj_deltas[day] = proj_deltas.get(day, 0) + signed
+            proj_deltas[day_idx] = proj_deltas.get(day_idx, 0) + signed
 
-    # Build current month daily balances
+    # Build current period daily balances
     current_daily = []
-    balance = current_start
-    for day in range(1, days_in_month + 1):
-        balance += current_deltas.get(day, 0) + proj_deltas.get(day, 0)
+    balance_curr = current_start_balance
+    for day in range(1, duration + 1):
+        balance_curr += current_deltas.get(day, 0) + proj_deltas.get(day, 0)
         
         if day < cutoff_day:
-            current_daily.append(DailyBalance(day=day, balance=round(balance, 2), projected_balance=None))
+            current_daily.append(DailyBalance(day=day, balance=round(balance_curr, 2), projected_balance=None))
         elif day == cutoff_day:
-            current_daily.append(DailyBalance(day=day, balance=round(balance, 2), projected_balance=round(balance, 2)))
+            current_daily.append(DailyBalance(day=day, balance=round(balance_curr, 2), projected_balance=round(balance_curr, 2)))
         else:
-            current_daily.append(DailyBalance(day=day, balance=None, projected_balance=round(balance, 2)))
+            current_daily.append(DailyBalance(day=day, balance=None, projected_balance=round(balance_curr, 2)))
 
-    # Build previous month daily balances
+    # Build previous period daily balances
     prev_daily = []
-    balance = prev_start
-    for day in range(1, prev_days_in_month + 1):
-        balance += prev_deltas.get(day, 0)
-        prev_daily.append(DailyBalance(day=day, balance=round(balance, 2)))
+    balance_p = prev_start_balance
+    for day in range(1, duration + 1):
+        balance_p += prev_deltas.get(day, 0)
+        prev_daily.append(DailyBalance(day=day, balance=round(balance_p, 2)))
 
     return BalanceHistory(current=current_daily, previous=prev_daily)
 
 
 async def get_financial_score(
-    session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None
+    session: AsyncSession, user_id: uuid.UUID, 
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
 ) -> FinancialScore:
-    if not month:
-        month = date.today().replace(day=1)
-        
-    summary = await get_summary(session, user_id, month)
+    summary = await get_summary(session, user_id, from_date, to_date)
     
-    # TP (Taxa de Poupança)
+    # Calculate period bounds to find income/expenses
     income = summary.monthly_income
     expenses = summary.monthly_expenses
     tp = ((income - expenses) / income * 100) if income > 0 else 0.0
     
     # IC (Índice de Comprometimento com custos fixos)
-    projected = await get_projected_transactions(session, user_id, month)
+    projected = await get_projected_transactions(session, user_id, from_date, to_date)
     fixed_expenses = sum(p.amount for p in projected if p.type == "debit")
     ic = (fixed_expenses / income * 100) if income > 0 else 0.0
     

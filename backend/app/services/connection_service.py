@@ -431,6 +431,22 @@ async def sync_connection(
         raise
 
 
+async def sync_all_connections(
+    session: AsyncSession, user_id: uuid.UUID
+) -> dict[str, int]:
+    """Sync all active connections for the user and return results."""
+    connections = await get_connections(session, user_id)
+    results = {}
+    for conn in connections:
+        if conn.status == "active":
+            try:
+                _, merged_count = await sync_connection(session, conn.id, user_id)
+                results[str(conn.id)] = merged_count
+            except Exception:
+                results[str(conn.id)] = -1
+    return results
+
+
 async def delete_connection(
     session: AsyncSession, connection_id: uuid.UUID, user_id: uuid.UUID
 ) -> bool:

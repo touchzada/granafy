@@ -163,6 +163,10 @@ export const connections = {
     const { data } = await api.patch(`/connections/${id}/settings`, settings)
     return data
   },
+  syncAll: async (): Promise<{ synced: number }> => {
+    const { data } = await api.post('/connections/sync-all')
+    return data
+  },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/connections/${id}`)
   },
@@ -382,36 +386,36 @@ export const budgets = {
 
 // Dashboard
 export const dashboard = {
-  summary: async (month?: string, balanceDate?: string, accountId?: string): Promise<DashboardSummary> => {
-    const { data } = await api.get('/dashboard/summary', { params: { month, balance_date: balanceDate, account_id: accountId } })
+  summary: async (from?: string, to?: string, balanceDate?: string, accountId?: string): Promise<DashboardSummary> => {
+    const { data } = await api.get('/dashboard/summary', { params: { from_date: from, to_date: to, balance_date: balanceDate, account_id: accountId } })
     return data
   },
-  spendingByCategory: async (month?: string, accountId?: string): Promise<SpendingByCategory[]> => {
-    const { data } = await api.get('/dashboard/spending-by-category', { params: { month, account_id: accountId } })
+  spendingByCategory: async (from?: string, to?: string, accountId?: string): Promise<SpendingByCategory[]> => {
+    const { data } = await api.get('/dashboard/spending-by-category', { params: { from_date: from, to_date: to, account_id: accountId } })
     return data
   },
   monthlyTrend: async (months = 6): Promise<MonthlyTrend[]> => {
     const { data } = await api.get('/dashboard/monthly-trend', { params: { months } })
     return data
   },
-  projectedTransactions: async (month?: string): Promise<ProjectedTransaction[]> => {
-    const { data } = await api.get('/dashboard/projected-transactions', { params: { month } })
+  projectedTransactions: async (from?: string, to?: string): Promise<ProjectedTransaction[]> => {
+    const { data } = await api.get('/dashboard/projected-transactions', { params: { from_date: from, to_date: to } })
     return data
   },
-  balanceHistory: async (month?: string): Promise<BalanceHistory> => {
-    const { data } = await api.get('/dashboard/balance-history', { params: { month } })
+  balanceHistory: async (from?: string, to?: string): Promise<BalanceHistory> => {
+    const { data } = await api.get('/dashboard/balance-history', { params: { from_date: from, to_date: to } })
     return data
   },
-  score: async (month?: string): Promise<FinancialScore> => {
-    const { data } = await api.get('/dashboard/score', { params: { month } })
+  score: async (from?: string, to?: string): Promise<FinancialScore> => {
+    const { data } = await api.get('/dashboard/score', { params: { from_date: from, to_date: to } })
     return data
   },
   heatmap: async (months = 6): Promise<HeatmapDay[]> => {
     const { data } = await api.get('/dashboard/heatmap', { params: { months } })
     return data
   },
-  anomalyAlerts: async (month?: string): Promise<{ category_id: string; category_name: string; category_icon: string; category_color: string; current_amount: number; average_amount: number; percentage_over: number; severity: string }[]> => {
-    const { data } = await api.get('/dashboard/anomaly-alerts', { params: { month } })
+  anomalyAlerts: async (from?: string, to?: string): Promise<{ category_id: string; category_name: string; category_icon: string; category_color: string; current_amount: number; average_amount: number; percentage_over: number; severity: string }[]> => {
+    const { data } = await api.get('/dashboard/anomaly-alerts', { params: { from_date: from, to_date: to } })
     return data
   },
 }

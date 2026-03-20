@@ -1,6 +1,7 @@
 """Anomaly / Insights detection service for Granafy dashboard."""
 import uuid
 from datetime import date, timedelta
+from typing import Optional
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,21 +12,22 @@ from app.models.category import Category
 
 
 async def get_anomaly_alerts(
-    session: AsyncSession, user_id: uuid.UUID, month: date | None = None
+    session: AsyncSession, user_id: uuid.UUID, 
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
 ) -> list[dict]:
-    """Compare current month category spending with 3-month rolling average.
+    """Compare current period category spending with historical average.
     Returns alerts for categories where spending exceeds the average by >= 30%.
     """
-    if not month:
-        month = date.today().replace(day=1)
+    if not from_date:
+        from_date = date.today().replace(day=1)
+    if not to_date:
+        if from_date.month == 12:
+            to_date = from_date.replace(year=from_date.year + 1, month=1, day=1)
+        else:
+            to_date = from_date.replace(month=from_date.month + 1, day=1)
 
-    month_start = month.replace(day=1)
-    if month.month == 12:
-        month_end = month.replace(year=month.year + 1, month=1, day=1)
-    else:
-        month_end = month.replace(month=month.month + 1, day=1)
-
-    # Current month spending by category
+    # Current period spending by category
     current_result = await session.execute(
         select(
             Category.id,
@@ -41,8 +43,8 @@ async def get_anomaly_alerts(
             Transaction.user_id == user_id,
             Account.is_closed == False,
             Transaction.type == "debit",
-            Transaction.date >= month_start,
-            Transaction.date < month_end,
+            Transaction.date >= from_date,
+            Transaction.date < to_date,
             Transaction.transfer_pair_id.is_(None),
             Transaction.source != "opening_balance",
         )
@@ -61,9 +63,9 @@ async def get_anomaly_alerts(
     if not current_spending:
         return []
 
-    # 3-month average spending by category (the 3 months BEFORE the selected month)
-    avg_start = (month_start - timedelta(days=90)).replace(day=1)
-    avg_end = month_start  # up to start of current month
+    # Historical average (last 90 days before from_date)
+    avg_start = from_date - timedelta(days=90)
+    avg_end = from_date
 
     avg_result = await session.execute(
         select(

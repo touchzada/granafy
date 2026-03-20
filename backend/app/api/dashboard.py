@@ -17,25 +17,27 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 @router.get("/summary", response_model=DashboardSummary)
 async def get_summary(
-    month: Optional[date] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     balance_date: Optional[date] = Query(None),
     account_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
     aid = uuid.UUID(account_id) if account_id else None
-    return await dashboard_service.get_summary(session, user.id, month, balance_date, account_id=aid)
+    return await dashboard_service.get_summary(session, user.id, from_date, to_date, balance_date, account_id=aid)
 
 
 @router.get("/spending-by-category", response_model=list[SpendingByCategory])
 async def get_spending_by_category(
-    month: Optional[date] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     account_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
     aid = uuid.UUID(account_id) if account_id else None
-    return await dashboard_service.get_spending_by_category(session, user.id, month, account_id=aid)
+    return await dashboard_service.get_spending_by_category(session, user.id, from_date, to_date, account_id=aid)
 
 
 @router.get("/monthly-trend", response_model=list[MonthlyTrend])
@@ -49,28 +51,31 @@ async def get_monthly_trend(
 
 @router.get("/balance-history", response_model=BalanceHistory)
 async def get_balance_history(
-    month: Optional[date] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    return await dashboard_service.get_balance_history(session, user.id, month)
+    return await dashboard_service.get_balance_history(session, user.id, from_date, to_date)
 
 
 @router.get("/projected-transactions", response_model=list[ProjectedTransaction])
 async def get_projected_transactions(
-    month: Optional[date] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    return await dashboard_service.get_projected_transactions(session, user.id, month)
+    return await dashboard_service.get_projected_transactions(session, user.id, from_date, to_date)
 
 @router.get("/score", response_model=FinancialScore)
 async def get_financial_score(
-    month: Optional[date] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    return await dashboard_service.get_financial_score(session, user.id, month)
+    return await dashboard_service.get_financial_score(session, user.id, from_date, to_date)
 
 @router.get("/heatmap", response_model=list[HeatmapDay])
 async def get_spending_heatmap(
@@ -82,8 +87,9 @@ async def get_spending_heatmap(
 
 @router.get("/anomaly-alerts")
 async def get_anomaly_alerts(
-    month: Optional[date] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    return await insights_service.get_anomaly_alerts(session, user.id, month)
+    return await insights_service.get_anomaly_alerts(session, user.id, from_date, to_date)

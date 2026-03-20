@@ -2,10 +2,12 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { dashboard, transactions, budgets, categories as categoriesApi, accounts as accountsApi, goals as goalsApi } from '@/lib/api'
+import { dashboard, transactions, budgets, categories as categoriesApi, accounts as accountsApi, goals as goalsApi, connections } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { DatePickerGranafy } from '@/components/date-picker-granafy'
+import { startOfMonth, endOfMonth, format, parseISO, differenceInDays, addDays, subMonths } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 import {
   Table,
@@ -32,12 +34,14 @@ import {
   Wand2,
   CheckCircle2,
   Target,
-  Store
+  Store,
+  RefreshCw
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
-import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { TransactionDialog } from '@/components/transaction-dialog'
 import { QuickRuleDialog } from '@/components/quick-rule-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -156,39 +160,15 @@ function HeatmapGrid({ data, locale = 'pt-BR', currency = 'BRL', privacyMode = f
   )
 }
 
-function currentMonth() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
-
-function shiftMonth(yearMonth: string, delta: number) {
-  const [y, m] = yearMonth.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-function monthLastDay(yearMonth: string) {
-  const [y, m] = yearMonth.split('-').map(Number)
-  return new Date(y, m, 0).getDate()
-}
-
-function monthLabel(yearMonth: string, locale = 'pt-BR') {
-  const [y, m] = yearMonth.split('-').map(Number)
-  return new Date(y, m - 1, 2).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
-}
-
-function formatDate(dateStr: string, locale = 'pt-BR') {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
-}
-
 
 export default function DashboardPage() {
   const { t, i18n } = useTranslation()
-  const { mask, blurClass, privacyMode, MASK } = usePrivacyMode()
+  const { mask, blurClass, privacyMode } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'BRL'
   const displayName = user?.preferences?.display_name || ''
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
+  const dateFnsLocale = i18n.language === 'en' ? undefined : ptBR
 
   const greeting = (() => {
     const hour = new Date().getHours()
@@ -196,7 +176,8 @@ export default function DashboardPage() {
     const base = t(`dashboard.${key}`)
     return displayName ? `${base}, ${displayName}` : base
   })()
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const [fromDate, setFromDate] = useState(() => format(startOfMonth(new Date()), 'yyyy-MM-01'))
+  const [toDate, setToDate] = useState(() => format(endOfMonth(new Date()), 'yyyy-MM-dd'))
   const [balanceDate, setBalanceDate] = useState<string | undefined>()
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
@@ -208,50 +189,49 @@ export default function DashboardPage() {
   const apiAccountId = selectedAccountId === 'all' ? undefined : selectedAccountId
   const queryClient = useQueryClient()
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
-  const monthParam = `${selectedMonth}-01`
-  const monthStart = `${selectedMonth}-01`
-  const monthEnd = `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`
-  const monthLabelStr = monthLabel(selectedMonth, locale)
 
-  const handleMonthChange = (newMonth: string) => {
-    setSelectedMonth(newMonth)
-    setBalanceDate(undefined)
-  }
+  const syncHistoryMutation = useMutation({
+    mutationFn: () => connections.syncAll(),
+    onSuccess: () => {
+      queryClient.invalidateQueries()
+      toast.success(t('connections.syncSuccessAll'))
+    },
+    onError: () => toast.error(t('connections.syncErrorAll'))
+  })
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboard', 'summary', selectedMonth, balanceDate, apiAccountId],
-    queryFn: () => dashboard.summary(monthParam, balanceDate, apiAccountId),
+    queryKey: ['dashboard', 'summary', fromDate, toDate, balanceDate, apiAccountId],
+    queryFn: () => dashboard.summary(fromDate, toDate, balanceDate, apiAccountId),
   })
 
   const { data: spending, isLoading: spendingLoading } = useQuery({
-    queryKey: ['dashboard', 'spending', selectedMonth, apiAccountId],
-    queryFn: () => dashboard.spendingByCategory(monthParam, apiAccountId),
+    queryKey: ['dashboard', 'spending', fromDate, toDate, apiAccountId],
+    queryFn: () => dashboard.spendingByCategory(fromDate, toDate, apiAccountId),
   })
-
-  const prevMonth = shiftMonth(selectedMonth, -1)
 
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['dashboard', 'balance-history', selectedMonth],
-    queryFn: () => dashboard.balanceHistory(monthParam),
+    queryKey: ['dashboard', 'balance-history', fromDate, toDate],
+    queryFn: () => dashboard.balanceHistory(fromDate, toDate),
   })
 
-  const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
-    queryKey: ['transactions', 'cumulative', selectedMonth],
+  const { data: rangeTxs, isLoading: rangeTxLoading } = useQuery({
+    queryKey: ['transactions', 'range', fromDate, toDate, apiAccountId],
     queryFn: () => transactions.list({
-      from: `${selectedMonth}-01`,
-      to: `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`,
+      from: fromDate,
+      to: toDate,
+      account_id: apiAccountId,
       limit: 500,
     }),
   })
 
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
-    queryKey: ['dashboard', 'projected-transactions', selectedMonth],
-    queryFn: () => dashboard.projectedTransactions(monthParam),
+    queryKey: ['dashboard', 'projected-transactions', fromDate, toDate],
+    queryFn: () => dashboard.projectedTransactions(fromDate, toDate),
   })
 
   const { data: scoreData, isLoading: scoreLoading } = useQuery({
-    queryKey: ['dashboard', 'score', selectedMonth],
-    queryFn: () => dashboard.score(monthParam),
+    queryKey: ['dashboard', 'score', fromDate, toDate],
+    queryFn: () => dashboard.score(fromDate, toDate),
   })
 
   const { data: heatmapData, isLoading: heatmapLoading } = useQuery({
@@ -260,8 +240,8 @@ export default function DashboardPage() {
   })
 
   const { data: budgetComparison } = useQuery({
-    queryKey: ['budgets', 'comparison', selectedMonth],
-    queryFn: () => budgets.comparison(monthParam),
+    queryKey: ['budgets', 'comparison', fromDate],
+    queryFn: () => budgets.comparison(fromDate),
   })
 
   const { data: categoriesList } = useQuery({
@@ -369,9 +349,10 @@ export default function DashboardPage() {
 
   const cumulativeData = useMemo(() => {
     if (!balanceHistory) return []
-    const daysInMonth = monthLastDay(selectedMonth)
+    const rangeDuration = differenceInDays(parseISO(toDate), parseISO(fromDate)) + 1
     const result: { day: number; current: number | null; projected: number | null; previous: number }[] = []
-    for (let day = 1; day <= daysInMonth; day++) {
+    
+    for (let day = 1; day <= rangeDuration; day++) {
       const cur = balanceHistory.current.find(d => d.day === day)
       const prev = balanceHistory.previous.find(d => d.day === day)
       result.push({
@@ -382,7 +363,7 @@ export default function DashboardPage() {
       })
     }
     return result
-  }, [balanceHistory, selectedMonth])
+  }, [balanceHistory, fromDate, toDate])
 
   const lastCurrentPoint = [...cumulativeData].reverse().find(d => d.current !== null)
   const lastDay = lastCurrentPoint?.day ?? 0
@@ -406,11 +387,14 @@ export default function DashboardPage() {
   const income = Number(summary?.monthly_income ?? 0)
   const expenses = Number(summary?.monthly_expenses ?? 0)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
-  const isCurrentMonth = selectedMonth === currentMonth()
-  const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
-  const daysInMonth = monthLastDay(selectedMonth)
-  const projectedSpend = expenses > 0 && isCurrentMonth && daysElapsed > 0
-    ? (expenses / daysElapsed) * daysInMonth
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const isCurrentlyInRange = today >= fromDate && today <= toDate
+  const daysElapsed = isCurrentlyInRange 
+    ? differenceInDays(new Date(), parseISO(fromDate)) + 1
+    : differenceInDays(parseISO(toDate), parseISO(fromDate)) + 1
+  const daysInRange = differenceInDays(parseISO(toDate), parseISO(fromDate)) + 1
+  const projectedSpend = expenses > 0 && isCurrentlyInRange && daysElapsed > 0
+    ? (expenses / daysElapsed) * daysInRange
     : null
 
   // Uncategorized data
@@ -453,7 +437,7 @@ export default function DashboardPage() {
   }, [spending, budgetComparison])
 
   const [txPage, setTxPage] = useState(1)
-  useEffect(() => setTxPage(1), [selectedMonth])
+  useEffect(() => setTxPage(1), [fromDate, toDate])
 
   type DisplayRow = {
     key: string
@@ -466,12 +450,14 @@ export default function DashboardPage() {
     categoryName: string | null
     categoryColor: string | null
     isProjected: boolean
+    merchant_name?: string | null
+    merchant_cnpj?: string | null
   }
 
   const TX_PER_PAGE = 10
   const allDisplayRows = useMemo(() => {
     const rows: DisplayRow[] = []
-    for (const tx of currentMonthTxs?.items ?? []) {
+    for (const tx of rangeTxs?.items ?? []) {
       rows.push({
         key: tx.id,
         description: tx.description,
@@ -483,6 +469,8 @@ export default function DashboardPage() {
         categoryName: tx.category?.name ?? null,
         categoryColor: tx.category?.color ?? null,
         isProjected: false,
+        merchant_name: tx.merchant_name,
+        merchant_cnpj: tx.merchant_cnpj,
       })
     }
     for (const pt of projectedTxs ?? []) {
@@ -499,54 +487,53 @@ export default function DashboardPage() {
         isProjected: true,
       })
     }
-    rows.sort((a, b) => a.date.localeCompare(b.date))
+    rows.sort((a, b) => b.date.localeCompare(a.date))
     return rows
-  }, [currentMonthTxs, projectedTxs])
+  }, [rangeTxs, projectedTxs])
 
   const txTotalPages = Math.ceil(allDisplayRows.length / TX_PER_PAGE)
   const pagedRows = allDisplayRows.slice((txPage - 1) * TX_PER_PAGE, txPage * TX_PER_PAGE)
-  const txListLoading = currentTxLoading || projectedTxLoading
+  const txListLoading = rangeTxLoading || projectedTxLoading
 
   // Savings rate display
-  const savingsRateColor = income === 0 && expenses > 0
-    ? 'text-rose-500'
-    : savingsRate > 0
-      ? 'text-emerald-600'
-      : savingsRate < 0
-        ? 'text-rose-500'
-        : 'text-muted-foreground'
-
-  const savingsRateDisplay = income === 0 && expenses > 0
-    ? '---'
-    : `${savingsRate.toFixed(0)}%`
+  const savingsRateDisplay = mask(`${savingsRate >= 0 ? '+' : ''}${savingsRate.toFixed(1)}%`)
+  const savingsRateColor = savingsRate >= 20 ? 'text-emerald-500' : savingsRate >= 0 ? 'text-amber-500' : 'text-rose-500'
 
   return (
     <div>
       {/* Header */}
       <PageHeader
         section={greeting}
-        title={new Date(selectedMonth + '-02').toLocaleDateString(locale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
+        title={`${format(parseISO(fromDate), 'MMM yy', { locale: dateFnsLocale })} - ${format(parseISO(toDate), 'MMM yy', { locale: dateFnsLocale })}`}
         action={
-          <div className="flex items-center gap-1">
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
-            >&#8249;</button>
+          <div className="flex items-center gap-2 bg-card border border-border rounded-xl p-1 shadow-sm">
             <DatePickerGranafy
-              value={balanceDate || `${selectedMonth}-01`}
-              onChange={(v) => {
-                const newMonth = v.substring(0, 7)
-                setSelectedMonth(newMonth)
-                setBalanceDate(v)
+              value={fromDate}
+              onChange={(v) => { 
+                if (v) setFromDate(v)
+                setBalanceDate(undefined)
               }}
-              compact
-              alignPopover="center"
+              alignPopover="left"
             />
-
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
-            >&#8250;</button>
+            <span className="text-muted-foreground font-medium px-0.5">→</span>
+            <DatePickerGranafy
+              value={toDate}
+              onChange={(v) => {
+                if (v) setToDate(v)
+                setBalanceDate(undefined)
+              }}
+              alignPopover="right"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => syncHistoryMutation.mutate()}
+              disabled={syncHistoryMutation.isPending}
+              className="ml-2 h-9 w-9 rounded-xl border-border/50 bg-card/50 backdrop-blur-sm hover:bg-primary/10 hover:border-primary/30 transition-all duration-300"
+              title="Resincronizar todas as contas"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncHistoryMutation.isPending ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
+            </Button>
           </div>
         }
       />
@@ -716,10 +703,10 @@ export default function DashboardPage() {
           <div
             className="col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
             onClick={() => setDrillDown({
-              title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
+              title: t('dashboard.drillDownIncome', { month: format(parseISO(fromDate), 'MMM yy', { locale: dateFnsLocale }) + ' - ' + format(parseISO(toDate), 'MMM yy', { locale: dateFnsLocale }) }),
               type: 'credit',
-              from: monthStart,
-              to: monthEnd,
+              from: fromDate,
+              to: toDate,
               account_id: apiAccountId,
             })}
           >
@@ -733,14 +720,13 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Expenses & Projection */}
           <div
             className="col-span-2 md:col-span-1 bg-card/40 backdrop-blur-xl border border-border/60 hover:border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group cursor-pointer relative overflow-hidden"
             onClick={() => setDrillDown({
-              title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
+              title: t('dashboard.drillDownExpenses', { month: format(parseISO(fromDate), 'MMM yy', { locale: dateFnsLocale }) + ' - ' + format(parseISO(toDate), 'MMM yy', { locale: dateFnsLocale }) }),
               type: 'debit',
-              from: monthStart,
-              to: monthEnd,
+              from: fromDate,
+              to: toDate,
               account_id: apiAccountId,
             })}
           >
@@ -913,11 +899,11 @@ export default function DashboardPage() {
                       key={item.category_id}
                       className="rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"
                       onClick={() => setDrillDown({
-                        title: t('dashboard.drillDownCategory', { category: item.category_name, month: monthLabelStr }),
+                        title: t('dashboard.drillDownCategory', { category: item.category_name, month: `${format(parseISO(fromDate), 'MMM yy', { locale: dateFnsLocale })} - ${format(parseISO(toDate), 'MMM yy', { locale: dateFnsLocale })}` }),
                         category_id: item.category_id,
                         type: 'debit',
-                        from: monthStart,
-                        to: monthEnd,
+                        from: fromDate,
+                        to: toDate,
                       })}
                     >
                       <div className="flex items-center gap-3">
@@ -1020,7 +1006,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(locale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(locale)}
+                  {format(parseISO(fromDate), 'dd MMM yy', { locale: dateFnsLocale })} → {format(parseISO(toDate), 'dd MMM yy', { locale: dateFnsLocale })}
                 </p>
               </div>
               {!balanceHistoryLoading && lastCurrentPoint && (
@@ -1052,8 +1038,7 @@ export default function DashboardPage() {
                     const chartState = _state as unknown as { activePayload?: Array<{ payload: { day: number } }> }
                     const payload = chartState?.activePayload ?? []
                     if (payload[0]) {
-                      const day = String(payload[0].payload.day).padStart(2, '0')
-                      const dateStr = `${selectedMonth}-${day}`
+                      const dateStr = format(addDays(parseISO(fromDate), payload[0].payload.day - 1), 'yyyy-MM-dd')
                       setDrillDown({
                         title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(locale) }),
                         from: dateStr,
@@ -1094,10 +1079,10 @@ export default function DashboardPage() {
                   />
                   <Tooltip
                     formatter={(value, name) => [
-                      value !== null ? (privacyMode !== 'visible' ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(selectedMonth, locale).split(' ')[0] : name === 'projected' ? `${monthLabel(selectedMonth, locale).split(' ')[0]} (Proj)` : monthLabel(prevMonth, locale).split(' ')[0],
+                      value !== null ? (privacyMode !== 'visible' ? '••••' : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
+                      name === 'current' ? format(parseISO(fromDate), 'MMM yy', { locale: dateFnsLocale }) : name === 'projected' ? `${format(parseISO(fromDate), 'MMM yy', { locale: dateFnsLocale })} (Proj)` : format(subMonths(parseISO(fromDate), 1), 'MMM yy', { locale: dateFnsLocale }),
                     ]}
-                    labelFormatter={(day) => t('dashboard.day', { day })}
+                    labelFormatter={(day) => t('dashboard.day', { day: format(addDays(parseISO(fromDate), day - 1), 'dd/MM', { locale: dateFnsLocale }) })}
                     contentStyle={{
                       background: 'var(--card)',
                       color: 'var(--foreground)',
@@ -1110,6 +1095,7 @@ export default function DashboardPage() {
                   <Area
                     type="monotone"
                     dataKey="current"
+                    name={t('dashboard.currentPeriod')}
                     stroke="#10B981"
                     strokeWidth={2}
                     fill="url(#cumGrad)"
@@ -1120,6 +1106,7 @@ export default function DashboardPage() {
                   <Line
                     type="monotone"
                     dataKey="projected"
+                    name={t('dashboard.projected')}
                     stroke="#10B981"
                     strokeWidth={2}
                     strokeDasharray="4 4"
@@ -1127,15 +1114,7 @@ export default function DashboardPage() {
                     activeDot={{ r: 3, fill: '#10B981' }}
                     connectNulls={false}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="previous"
-                    stroke="#94A3B8"
-                    strokeWidth={2}
-                    strokeDasharray="5 3"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#94A3B8' }}
-                  />
+                  <Line type="monotone" dataKey="previous" name={t('dashboard.previousPeriod')} stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="5 5" dot={false} opacity={0.3} />
                 </ComposedChart>
               </ResponsiveContainer>
             ) : (
@@ -1148,11 +1127,13 @@ export default function DashboardPage() {
             const footerCurrent = cumulativeData.find(d => d.day === footerDay)?.current ?? totalBalance
             const footerPct = footerPrev !== 0 ? ((footerCurrent - footerPrev) / Math.abs(footerPrev)) * 100 : null
             if (footerPrev === 0 || footerPct === null) return null
+            const prevMonth = subMonths(parseISO(fromDate), 1)
+            const monthLabel = (date: Date) => format(date, 'MMM yy', { locale: dateFnsLocale })
             return (
               <div className="px-5 pb-4 pt-0 shrink-0">
                 <p className="text-xs text-muted-foreground">
                   {t('dashboard.balanceFlowVsPrev', {
-                    month: monthLabel(prevMonth, locale).split(' ')[0],
+                    month: monthLabel(prevMonth).split(' ')[0],
                     day: footerDay,
                     amount: mask(formatCurrency(footerPrev, userCurrency, locale)),
                     delta: `${footerPct >= 0 ? '+' : ''}${footerPct.toFixed(1)}%`,
@@ -1182,82 +1163,14 @@ export default function DashboardPage() {
             </div>
           ) : pagedRows.length > 0 ? (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b border-border hover:bg-transparent">
-                    <TableHead className="pl-5 text-xs font-medium text-muted-foreground">{t('transactions.description')}</TableHead>
-                    <TableHead className="pr-5 text-right text-xs font-medium text-muted-foreground">{t('transactions.amount')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pagedRows.map((row) => (
-                    <TableRow
-                      key={row.key}
-                      className={`border-b border-border last:border-0 ${!row.isProjected ? 'cursor-pointer hover:bg-muted' : ''}`}
-                      onClick={() => {
-                        if (row.isProjected) return
-                        const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                        if (tx) { setEditingTx(tx); setDialogOpen(true) }
-                      }}
-                    >
-                      <TableCell className="py-2.5 pl-5">
-                        <div className="flex items-center gap-3">
-                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
-                              {row.isProjected && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
-                                  {t('transactions.recurringBadge')}
-                                </span>
-                              )}
-                              {!row.isProjected && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                                    if (tx) {
-                                      setQuickRuleTx(tx)
-                                      setQuickRuleOpen(true)
-                                    }
-                                  }}
-                                  className="p-1 text-muted-foreground/40 hover:text-primary hover:bg-primary/5 rounded transition-colors"
-                                  title="Criar regra para esta transação"
-                                >
-                                  <Wand2 size={12} />
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <p className="text-xs text-muted-foreground">{formatDate(row.date, locale)}</p>
-                              {(() => {
-                                const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                                if (tx?.merchant_cnpj) {
-                                  return (
-                                    <span 
-                                      className="text-[8px] font-medium tracking-wide text-muted-foreground bg-accent border border-border px-1 py-0 rounded cursor-help flex items-center gap-1 shrink-0"
-                                      title={tx.merchant_name ? `${tx.merchant_name} (${tx.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")})` : `CNPJ: ${tx.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")}`}
-                                    >
-                                      <Store size={8} />
-                                      {tx.merchant_name ? (tx.merchant_name.length > 12 ? tx.merchant_name.substring(0, 12) + '...' : tx.merchant_name) : 'Loja'}
-                                    </span>
-                                  )
-                                }
-                                return null
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-2.5 pr-5 text-right">
-                        <span className={`text-sm font-semibold tabular-nums ${row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {mask(`${row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <TransactionTable
+                transactions={pagedRows}
+                onEdit={(tx) => { setEditingTx(tx); setDialogOpen(true) }}
+                onQuickRule={(tx) => { setQuickRuleTx(tx); setQuickRuleOpen(true) }}
+                privacyMode={privacyMode}
+                locale={locale}
+                currency={userCurrency}
+              />
               {txTotalPages > 1 && (
                 <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
                   <Button
@@ -1283,7 +1196,13 @@ export default function DashboardPage() {
               )}
             </>
           ) : (
-            <p className="text-muted-foreground text-sm text-center py-8">{t('dashboard.noTransactions')}</p>
+            <div className="flex flex-col items-center justify-center py-12 px-4 bg-muted/10 border border-dashed border-border rounded-3xl">
+              <div className="w-12 h-12 rounded-2xl bg-muted/20 flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-6 h-6 text-muted-foreground/40" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{t('dashboard.noTransactions')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('dashboard.noTransactionsPeriod')}</p>
+            </div>
           )}
         </div>
       </div>
@@ -1312,28 +1231,31 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <TransactionDrillDown
-        filter={drillDown}
-        onClose={() => setDrillDown(null)}
-        onTransactionClick={(tx) => { setEditingTx(tx); setDialogOpen(true) }}
-      />
+      {drillDown && (
+        <TransactionDrillDown
+          filter={drillDown}
+          onClose={() => setDrillDown(null)}
+          onTransactionClick={(tx) => { setEditingTx(tx); setDialogOpen(true); }}
+        />
+      )}
 
-      <TransactionDialog
-        open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditingTx(null) }}
-        transaction={editingTx}
-        categories={(categoriesList ?? []).map((c: { id: string; name: string; icon: string }) => ({ id: c.id, name: c.name, icon: c.icon }))}
-        accounts={(accountsList ?? []).map((a: { id: string; name: string }) => ({ id: a.id, name: a.name }))}
-        onSave={(data) => {
-          if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data })
-        }}
-        onDelete={() => {
-          if (editingTx) deleteMutation.mutate(editingTx.id)
-        }}
-        loading={updateMutation.isPending || deleteMutation.isPending}
-        error={updateMutation.error ? extractApiError(updateMutation.error) : deleteMutation.error ? extractApiError(deleteMutation.error) : null}
-        isSynced={!!editingTx?.external_id}
-      />
+      {dialogOpen && (
+        <TransactionDialog
+          open={dialogOpen}
+          onClose={() => { setDialogOpen(false); setEditingTx(null); }}
+          transaction={editingTx}
+          onSave={(data) => {
+            if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data })
+          }}
+          onDelete={() => {
+            if (editingTx) deleteMutation.mutate(editingTx.id)
+          }}
+          categories={categoriesList || []}
+          accounts={accountsList || []}
+          loading={updateMutation.isPending || deleteMutation.isPending}
+          error={updateMutation.error ? 'Erro ao salvar' : deleteMutation.error ? 'Erro ao deletar' : null}
+        />
+      )}
 
       <QuickRuleDialog
         open={quickRuleOpen}
@@ -1341,5 +1263,89 @@ export default function DashboardPage() {
         transaction={quickRuleTx}
       />
     </div>
+  )
+}
+
+function TransactionTable({ 
+  transactions, 
+  onEdit, 
+  onQuickRule,
+  locale, 
+  currency 
+}: { 
+  transactions: any[], 
+  onEdit: (tx: any) => void, 
+  onQuickRule?: (tx: any) => void,
+  privacyMode?: string | boolean, 
+  locale: string, 
+  currency: string 
+}) {
+  const { t } = useTranslation()
+  const { mask } = usePrivacyMode()
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="border-b border-border hover:bg-transparent">
+          <TableHead className="pl-5 text-xs font-medium text-muted-foreground">{t('transactions.description')}</TableHead>
+          <TableHead className="pr-5 text-right text-xs font-medium text-muted-foreground">{t('transactions.amount')}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {transactions.map((row) => (
+          <TableRow
+            key={row.key}
+            className={`border-b border-border last:border-0 ${!row.isProjected ? 'cursor-pointer hover:bg-muted' : ''}`}
+            onClick={() => {
+              if (!row.isProjected) onEdit(row)
+            }}
+          >
+            <TableCell className="py-2.5 pl-5">
+              <div className="flex items-center gap-3">
+                <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                    {row.isProjected && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
+                        {t('transactions.recurringBadge')}
+                      </span>
+                    )}
+                    {!row.isProjected && onQuickRule && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onQuickRule(row)
+                        }}
+                        className="p-1 text-muted-foreground/40 hover:text-primary hover:bg-primary/5 rounded transition-colors"
+                      >
+                        <Wand2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-xs text-muted-foreground">{new Date(row.date + 'T00:00:00').toLocaleDateString(locale)}</p>
+                    {row.merchant_cnpj && (
+                      <span 
+                        className="text-[8px] font-medium tracking-wide text-muted-foreground bg-accent border border-border px-1 py-0 rounded cursor-help flex items-center gap-1 shrink-0"
+                        title={row.merchant_name ? `${row.merchant_name} (${row.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")})` : `CNPJ: ${row.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")}`}
+                      >
+                        <Store size={8} />
+                        {row.merchant_name ? (row.merchant_name.length > 12 ? row.merchant_name.substring(0, 12) + '...' : row.merchant_name) : 'Loja'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </TableCell>
+            <TableCell className="py-2.5 pr-5 text-right">
+              <span className={`text-sm font-semibold tabular-nums ${row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                {mask(`${row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), currency, locale)}`)}
+              </span>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }

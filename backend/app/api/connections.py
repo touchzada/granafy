@@ -149,6 +149,15 @@ async def update_settings(
     return connection
 
 
+@router.post("/sync-all")
+async def sync_all(
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user),
+):
+    """Sync all active bank connections for the current user."""
+    return await connection_service.sync_all_connections(session, user.id)
+
+
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: uuid.UUID,
