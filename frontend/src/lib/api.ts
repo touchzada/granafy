@@ -25,6 +25,8 @@ import type {
   FinancialScore,
   HeatmapDay,
   Goal,
+  ReportResponse,
+  InstallmentsResponse,
 } from '@/types'
 
 const api = axios.create({
@@ -488,6 +490,30 @@ export const goals = {
   },
   deposit: async (id: string, amount: number): Promise<Goal> => {
     const { data } = await api.patch(`/goals/${id}/deposit`, { amount })
+    return data
+  },
+}
+
+// Reports
+export const reports = {
+  netWorth: async (months = 12, interval = 'monthly', accountId?: string): Promise<ReportResponse> => {
+    const { data } = await api.get('/reports/net-worth', { params: { months, interval, account_id: accountId } })
+    return data
+  },
+  incomeExpenses: async (months = 12, interval = 'monthly', accountId?: string): Promise<ReportResponse> => {
+    const { data } = await api.get('/reports/income-expenses', { params: { months, interval, account_id: accountId } })
+    return data
+  },
+  creditCard: async (months = 12, interval = 'monthly', accountId?: string): Promise<ReportResponse> => {
+    const { data } = await api.get('/reports/credit-card', { params: { months, interval, account_id: accountId } })
+    return data
+  },
+  installments: async (accountId?: string): Promise<InstallmentsResponse> => {
+    const { data } = await api.get('/reports/installments', { params: { account_id: accountId } })
+    return data
+  },
+  heatmap: async (months = 6, type = 'all', accountId?: string): Promise<{ date: string; amount: number; level: number; top_item?: string }[]> => {
+    const { data } = await api.get('/reports/heatmap', { params: { months, type, account_id: accountId } })
     return data
   },
 }

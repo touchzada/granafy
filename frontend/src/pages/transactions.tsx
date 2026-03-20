@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Check, Download, Search, X, ArrowUp, ArrowDown, ArrowUpDown, Wand2, ArrowRightLeft } from 'lucide-react'
+import { Check, Download, Search, X, ArrowUp, ArrowDown, ArrowUpDown, Wand2, ArrowRightLeft, Store } from 'lucide-react'
 import type { Transaction } from '@/types'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
@@ -466,6 +466,15 @@ export default function TransactionsPage() {
                           {tx.installments && (
                             <span className="text-[10px] font-semibold tracking-wide text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full shrink-0">
                               {tx.installments}
+                            </span>
+                          )}
+                          {tx.merchant_cnpj && (
+                            <span 
+                              className="text-[9px] font-medium tracking-wide text-muted-foreground bg-accent border border-border px-1.5 py-0.5 rounded cursor-help flex items-center gap-1 shrink-0 transition-colors hover:bg-accent/80 hover:text-foreground"
+                              title={tx.merchant_name ? `${tx.merchant_name} (${tx.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")})` : `CNPJ: ${tx.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")}`}
+                            >
+                              <Store size={10} />
+                              {tx.merchant_name ? (tx.merchant_name.length > 15 ? tx.merchant_name.substring(0, 15) + '...' : tx.merchant_name) : 'Loja'}
                             </span>
                           )}
                           {recurringList?.some(r => r.description === tx.description && r.type === tx.type) && (

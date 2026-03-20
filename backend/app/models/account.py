@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import JSON, Boolean, DateTime, Date, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,7 +19,7 @@ class Account(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
-    connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("bank_connections.id"), nullable=True)
+    connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("bank_connections.id", ondelete="CASCADE"), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card
@@ -31,6 +31,9 @@ class Account(Base):
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     credit_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    balance_close_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    balance_due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    credit_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     connection: Mapped[Optional["BankConnection"]] = relationship(back_populates="accounts")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account", cascade="all, delete-orphan")

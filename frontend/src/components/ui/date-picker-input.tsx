@@ -24,6 +24,7 @@ function DatePickerInput({
       label={placeholder}
       compact
       alignPopover={alignMap[align]}
+      disabled={disabled}
     />
   )
 }

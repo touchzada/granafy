@@ -1,5 +1,9 @@
 import time
-from datetime import date
+from datetime import date, datetime, timezone
+try:
+    import zoneinfo
+except ImportError:
+    from backports import zoneinfo
 from decimal import Decimal
 from typing import Optional
 
@@ -209,7 +213,13 @@ class PluggyProvider(BankProvider):
                     else:
                         txn_type = "credit" if amount_raw >= 0 else "debit"
 
-                    txn_date = date.fromisoformat(txn["date"][:10])
+                    # Pluggy dates are usually UTC. Convert to Brazil (BRT) before extracting date.
+                    br_tz = zoneinfo.ZoneInfo("America/Sao_Paulo")
+                    dt_str = txn["date"]
+                    if dt_str.endswith("Z"):
+                        dt_str = dt_str.replace("Z", "+00:00")
+                    utc_dt = datetime.fromisoformat(dt_str)
+                    txn_date = utc_dt.astimezone(br_tz).date()
 
                     # Pending vs booked status
                     status = "pending" if txn.get("status") == "PENDING" else "posted"

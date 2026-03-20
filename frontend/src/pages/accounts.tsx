@@ -225,6 +225,31 @@ export default function AccountsPage() {
     onError: () => toast.error(t('accounts.syncError')),
   })
 
+  const resyncAllMutation = useMutation({
+    mutationFn: async () => {
+      if (!connectionsList || connectionsList.length === 0) return
+      const results = []
+      for (const conn of connectionsList) {
+        try {
+          const result = await connections.sync(conn.id)
+          results.push(result)
+        } catch (e) {
+          console.error(`Sync failed for ${conn.institution_name}:`, e)
+        }
+      }
+      return results
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['heatmap'] })
+      toast.success(`Todas as ${connectionsList?.length ?? 0} contas resincronizadas!`)
+    },
+    onError: () => toast.error(t('accounts.syncError')),
+  })
+
   const disconnectMutation = useMutation({
     mutationFn: (id: string) => connections.delete(id),
     onSuccess: () => {
@@ -302,6 +327,17 @@ export default function AccountsPage() {
         title={t('accounts.title')}
         action={
           <div className="flex gap-2">
+            {connectionsList && connectionsList.length > 0 && (
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => resyncAllMutation.mutate()}
+                disabled={resyncAllMutation.isPending}
+              >
+                <RefreshCw size={16} className={resyncAllMutation.isPending ? 'animate-spin' : ''} />
+                {resyncAllMutation.isPending ? 'Sincronizando...' : 'Resincronizar Todas'}
+              </Button>
+            )}
             <Button variant="outline" className="gap-1.5" onClick={() => setConnectorSelectOpen(true)}>
               <Plus size={16} />
               {t('accounts.connectBank')}

@@ -14,9 +14,10 @@ interface DatePickerGranafyProps {
     label?: string;
     compact?: boolean;
     alignPopover?: 'left' | 'right' | 'center';
+    disabled?: boolean;
 }
 
-export function DatePickerGranafy({ value, onChange, label, compact = false, alignPopover = 'left' }: DatePickerGranafyProps) {
+export function DatePickerGranafy({ value, onChange, label, compact = false, alignPopover = 'left', disabled = false }: DatePickerGranafyProps) {
     const { i18n } = useTranslation();
     const isPt = i18n.language?.startsWith('pt');
     const MONTHS = isPt ? MONTHS_PT : MONTHS_EN;
@@ -95,8 +96,8 @@ export function DatePickerGranafy({ value, onChange, label, compact = false, ali
     return (
         <div ref={ref} className="relative">
             <button
-                onClick={() => setOpen(!open)}
-                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-all duration-300 cursor-pointer select-none border ${open
+                onClick={() => { if (!disabled) setOpen(!open) }}
+                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-all duration-300 cursor-pointer select-none border ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${open
                     ? 'bg-card border-primary/50 text-foreground shadow-lg'
                     : value
                         ? 'bg-card/60 border-border text-foreground/80 hover:border-primary/40 hover:text-foreground'
@@ -111,7 +112,10 @@ export function DatePickerGranafy({ value, onChange, label, compact = false, ali
             </button>
 
             <div className={`absolute top-full mt-2 ${alignmentClasses} z-[70] transition-all duration-200 ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
-                }`}>
+                }`}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                >
                 <div className="bg-popover/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl shadow-black/20 overflow-hidden flex">
                     {/* Presets sidebar */}
                     <div className="w-24 border-r border-border/60 py-3 px-2 flex flex-col gap-1">

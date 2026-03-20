@@ -35,8 +35,8 @@ async def get_transactions(
     # Base query: user's own transactions (manual or via account)
     base_query = (
         select(Transaction)
-        .outerjoin(Account)
-        .outerjoin(BankConnection)
+        .join(Account, Transaction.account_id == Account.id)
+        .outerjoin(BankConnection, Account.connection_id == BankConnection.id)
         .where(
             or_(
                 Transaction.user_id == user_id,
@@ -46,13 +46,19 @@ async def get_transactions(
         .options(selectinload(Transaction.category), selectinload(Transaction.account))
     )
 
-    # Exclude opening_balance transactions from the normal list unless explicitly requested
-    if not include_opening_balance:
-        base_query = base_query.where(Transaction.source != "opening_balance")
-
-    # Apply filters
+    # Exclude transactions from closed accounts by default ONLY IF a specific account wasn't chosen.
+    # Actually, for global views (Total), we probably want to see history.
+    # But for individual account lists, if it's open, it's open.
+    # If account_id is None (Global Dashboard), we show ALL accounts (Active + Closed) to preserve history.
     if account_id:
+        # If a specific account is requested, we show it regardless of status 
+        # (user chose it), but usually callers filter for active accounts before calling.
         base_query = base_query.where(Transaction.account_id == account_id)
+    else:
+        # If it's a global view, we could potentially filter closed accounts if the user 
+        # really wants them gone. But user said "valor muda qdo marco todas as contas", 
+        # implying he expects "Todas" to actually be "Todas".
+        pass
     if category_id:
         base_query = base_query.where(Transaction.category_id == category_id)
     if uncategorized:

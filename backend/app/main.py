@@ -17,6 +17,7 @@ from app.api.rules import router as rules_router
 from app.api.assets import router as assets_router
 from app.api.ai import router as ai_router
 from app.api.goals import router as goals_router
+from app.api.reports import router as reports_router
 from app.api.setup import router as setup_router
 from app.api.transactions import router as transactions_router
 from app.core.auth import auth_backend, fastapi_users
@@ -92,6 +93,7 @@ app.include_router(assets_router)
 app.include_router(goals_router)
 app.include_router(dashboard_router)
 app.include_router(ai_router)
+app.include_router(reports_router)
 app.include_router(setup_router)
 
 

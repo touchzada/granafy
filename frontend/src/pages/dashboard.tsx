@@ -32,6 +32,7 @@ import {
   Wand2,
   CheckCircle2,
   Target,
+  Store
 } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
@@ -148,7 +149,7 @@ function HeatmapGrid({ data, locale = 'pt-BR', currency = 'BRL', privacyMode = f
           <p className="font-semibold text-foreground">
             {WEEKDAY_LABELS[new Date(tooltip.day.date + 'T00:00:00').getDay()]}, {new Date(tooltip.day.date + 'T00:00:00').toLocaleDateString(locale)}
           </p>
-          <p className="text-muted-foreground">{privacyMode ? '••••' : formatCurrency(tooltip.day.amount, currency, locale)}</p>
+          <p className="text-muted-foreground">{privacyMode !== 'visible' ? '••••' : formatCurrency(tooltip.day.amount, currency, locale)}</p>
         </div>
       )}
     </div>
@@ -831,7 +832,9 @@ export default function DashboardPage() {
                           <Link to={`/accounts/${card.id}`} className="text-xs font-bold text-foreground truncate max-w-[160px] uppercase tracking-wide hover:text-primary transition-colors hover:underline">
                             {cardBrandName}
                           </Link>
-                          <p className="text-[9px] text-muted-foreground font-medium uppercase mt-0.5 tracking-wider">{card.credit_data?.brand || card.name.split(' ')[0] || 'Cartão de Crédito'}</p>
+                          <p className="text-[9px] text-muted-foreground font-medium uppercase mt-0.5 tracking-wider">
+                            {card.credit_level ? `${card.credit_data?.brand || ''} ${card.credit_level}` : (card.credit_data?.brand || card.name.split(' ')[0] || 'Cartão de Crédito')}
+                          </p>
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           {card.account_number && (
@@ -1055,6 +1058,7 @@ export default function DashboardPage() {
                         title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(locale) }),
                         from: dateStr,
                         to: dateStr,
+                        isSpendingOnly: true,
                       })
                     }
                   }}
@@ -1090,7 +1094,7 @@ export default function DashboardPage() {
                   />
                   <Tooltip
                     formatter={(value, name) => [
-                      value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
+                      value !== null ? (privacyMode !== 'visible' ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
                       name === 'current' ? monthLabel(selectedMonth, locale).split(' ')[0] : name === 'projected' ? `${monthLabel(selectedMonth, locale).split(' ')[0]} (Proj)` : monthLabel(prevMonth, locale).split(' ')[0],
                     ]}
                     labelFormatter={(day) => t('dashboard.day', { day })}
@@ -1224,7 +1228,24 @@ export default function DashboardPage() {
                                 </button>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground">{formatDate(row.date, locale)}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <p className="text-xs text-muted-foreground">{formatDate(row.date, locale)}</p>
+                              {(() => {
+                                const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
+                                if (tx?.merchant_cnpj) {
+                                  return (
+                                    <span 
+                                      className="text-[8px] font-medium tracking-wide text-muted-foreground bg-accent border border-border px-1 py-0 rounded cursor-help flex items-center gap-1 shrink-0"
+                                      title={tx.merchant_name ? `${tx.merchant_name} (${tx.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")})` : `CNPJ: ${tx.merchant_cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5")}`}
+                                    >
+                                      <Store size={8} />
+                                      {tx.merchant_name ? (tx.merchant_name.length > 12 ? tx.merchant_name.substring(0, 12) + '...' : tx.merchant_name) : 'Loja'}
+                                    </span>
+                                  )
+                                }
+                                return null
+                              })()}
+                            </div>
                           </div>
                         </div>
                       </TableCell>
@@ -1282,6 +1303,7 @@ export default function DashboardPage() {
                 title: t('dashboard.drillDownDay', { date: new Date(date + 'T00:00:00').toLocaleDateString(locale) }),
                 from: date,
                 to: date,
+                isSpendingOnly: true,
               })}
             />
           ) : (

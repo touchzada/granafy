@@ -16,6 +16,46 @@ from app.services.rule_service import apply_rules_to_transaction, PLUGGY_CATEGOR
 from app.services.transfer_detection_service import detect_transfer_pairs
 
 
+CNPJ_CATEGORY_MAP = {
+    "18033952000161": "Transporte",  # 99 Taxis / 99 Pop
+    "17895646000187": "Transporte",  # Uber do Brasil
+    "14380200000121": "Alimentação", # iFood
+    "13590585000199": "Assinaturas", # Netflix
+    "19033817000145": "Assinaturas", # Spotify
+    "15436940000103": "Compras",     # Amazon
+    "03007331000141": "Compras",     # Mercado Livre
+    "33000118000179": "Moradia",     # Telemar Norte Leste / Oi
+    "02558157000162": "Moradia",     # Vivo / Telefonica
+    "40432544000147": "Moradia",     # Claro
+    "02449992000164": "Moradia",     # TIM
+    "00000000000191": "Salário",     # Banco do Brasil (Ex)
+}
+
+async def _match_cnpj_category(
+    session: AsyncSession, user_id: uuid.UUID, cnpj: Optional[str]
+) -> Optional[uuid.UUID]:
+    if not cnpj:
+        return None
+    # Remove all non-numeric chars
+    clean_cnpj = "".join(filter(str.isdigit, cnpj))
+    if not clean_cnpj:
+        return None
+
+    app_name = CNPJ_CATEGORY_MAP.get(clean_cnpj)
+    if not app_name:
+        for k, v in CNPJ_CATEGORY_MAP.items():
+            if clean_cnpj.startswith("".join(filter(str.isdigit, k))):
+                app_name = v
+                break
+                
+    if not app_name:
+        return None
+
+    result = await session.execute(
+        select(Category.id).where(Category.user_id == user_id, Category.name == app_name)
+    )
+    return result.scalar_one_or_none()
+
 
 async def _match_pluggy_category(
     session: AsyncSession, user_id: uuid.UUID, pluggy_category: Optional[str]
@@ -110,6 +150,18 @@ async def handle_oauth_callback(
     new_tx_ids: list[uuid.UUID] = []
 
     for acc_data in connection_data.accounts:
+        close_date = None
+        due_date = None
+        credit_level = None
+        if acc_data.credit_data:
+            c_str = acc_data.credit_data.get("balanceCloseDate")
+            d_str = acc_data.credit_data.get("balanceDueDate")
+            if c_str:
+                close_date = datetime.fromisoformat(c_str.replace("Z", "+00:00")).date()
+            if d_str:
+                due_date = datetime.fromisoformat(d_str.replace("Z", "+00:00")).date()
+            credit_level = acc_data.credit_data.get("level")
+
         account = Account(
             user_id=user_id,
             connection_id=connection.id,
@@ -119,6 +171,9 @@ async def handle_oauth_callback(
             balance=acc_data.balance,
             currency=acc_data.currency,
             credit_data=acc_data.credit_data,
+            balance_close_date=close_date,
+            balance_due_date=due_date,
+            credit_level=credit_level,
         )
         session.add(account)
         await session.flush()
@@ -128,9 +183,16 @@ async def handle_oauth_callback(
             connection_data.credentials, acc_data.external_id, None
         )
         for txn_data in transactions_data:
-            category_id = await _match_pluggy_category(
-                session, user_id, txn_data.pluggy_category
-            )
+            merchant = txn_data.raw_data.get("merchant") or {}
+            merchant_cnpj = merchant.get("cnpj")
+            merchant_name = merchant.get("businessName") or merchant.get("name")
+
+            category_id = await _match_cnpj_category(session, user_id, merchant_cnpj)
+            if not category_id:
+                category_id = await _match_pluggy_category(
+                    session, user_id, txn_data.pluggy_category
+                )
+
             transaction = Transaction(
                 user_id=user_id,
                 account_id=account.id,
@@ -143,6 +205,8 @@ async def handle_oauth_callback(
                 status=txn_data.status,
                 payee=txn_data.payee,
                 raw_data=txn_data.raw_data,
+                merchant_cnpj=merchant_cnpj,
+                merchant_name=merchant_name,
                 category_id=category_id,
             )
             session.add(transaction)
@@ -240,10 +304,25 @@ async def sync_connection(
             )
             account = result.scalar_one_or_none()
 
+            close_date = None
+            due_date = None
+            credit_level = None
+            if acc_data.credit_data:
+                c_str = acc_data.credit_data.get("balanceCloseDate")
+                d_str = acc_data.credit_data.get("balanceDueDate")
+                if c_str:
+                    close_date = datetime.fromisoformat(c_str.replace("Z", "+00:00")).date()
+                if d_str:
+                    due_date = datetime.fromisoformat(d_str.replace("Z", "+00:00")).date()
+                credit_level = acc_data.credit_data.get("level")
+
             if account:
                 account.balance = acc_data.balance
                 account.name = acc_data.name
                 account.credit_data = acc_data.credit_data
+                account.balance_close_date = close_date
+                account.balance_due_date = due_date
+                account.credit_level = credit_level
                 if acc_data.account_number:
                     account.account_number = acc_data.account_number
             else:
@@ -256,6 +335,9 @@ async def sync_connection(
                     balance=acc_data.balance,
                     currency=acc_data.currency,
                     credit_data=acc_data.credit_data,
+                    balance_close_date=close_date,
+                    balance_due_date=due_date,
+                    credit_level=credit_level,
                     account_number=acc_data.account_number,
                 )
                 session.add(account)
@@ -297,9 +379,16 @@ async def sync_connection(
                     merged_count += 1
                     continue
 
-                category_id = await _match_pluggy_category(
-                    session, user_id, txn_data.pluggy_category
-                )
+                merchant = txn_data.raw_data.get("merchant") or {}
+                merchant_cnpj = merchant.get("cnpj")
+                merchant_name = merchant.get("businessName") or merchant.get("name")
+
+                category_id = await _match_cnpj_category(session, user_id, merchant_cnpj)
+                if not category_id:
+                    category_id = await _match_pluggy_category(
+                        session, user_id, txn_data.pluggy_category
+                    )
+
                 transaction = Transaction(
                     user_id=user_id,
                     account_id=account.id,
@@ -312,6 +401,8 @@ async def sync_connection(
                     status=txn_data.status,
                     payee=txn_data.payee,
                     raw_data=txn_data.raw_data,
+                    merchant_cnpj=merchant_cnpj,
+                    merchant_name=merchant_name,
                     category_id=category_id,
                 )
                 session.add(transaction)

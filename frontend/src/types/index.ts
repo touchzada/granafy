@@ -76,6 +76,9 @@ export interface Account {
     balanceDueDate?: string
     [key: string]: any
   } | null
+  balance_close_date?: string | null
+  balance_due_date?: string | null
+  credit_level?: string | null
 }
 
 export interface AccountSummary {
@@ -103,6 +106,9 @@ export interface Transaction {
   notes: string | null
   transfer_pair_id: string | null
   installments?: string
+  merchant_cnpj?: string | null
+  merchant_name?: string | null
+  account?: Account | null
 }
 
 export interface Goal {
@@ -310,4 +316,77 @@ export interface HeatmapDay {
   date: string
   amount: number
   level: number
+}
+
+// Reports
+export interface ReportBreakdown {
+  key: string
+  label: string
+  value: number
+  color: string
+}
+
+export interface ReportSummary {
+  primary_value: number
+  change_amount: number
+  change_percent: number | null
+  breakdowns: ReportBreakdown[]
+}
+
+export interface ReportDataPoint {
+  date: string
+  value: number
+  breakdowns: Record<string, number>
+}
+
+export interface ReportMeta {
+  type: string
+  series_keys: string[]
+  currency: string
+  interval: string
+}
+
+export interface ReportCompositionItem {
+  key: string
+  label: string
+  value: number
+  color: string
+  group: string
+}
+
+export interface CategoryTrendItem {
+  key: string
+  label: string
+  color: string
+  total: number
+  group: string
+  series: ReportDataPoint[]
+}
+
+export interface ReportResponse {
+  summary: ReportSummary
+  trend: ReportDataPoint[]
+  meta: ReportMeta
+  composition: ReportCompositionItem[]
+  category_trend: CategoryTrendItem[]
+}
+
+export interface InstallmentItem {
+  description: string
+  account_name: string
+  total_amount: number
+  installment_amount: number
+  current_installment: number
+  total_installments: number
+  remaining_amount: number
+  category_name: string | null
+  category_color: string | null
+  date: string
+}
+
+export interface InstallmentsResponse {
+  items: InstallmentItem[]
+  total_remaining: number
+  total_monthly: number
+  count: number
 }

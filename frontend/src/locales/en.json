@@ -13,6 +13,7 @@
     "settings": "Settings",
     "recurring": "Recurring",
     "assets": "Assets",
+    "reports": "Reports",
     "advisor": "AI Advisor"
   },
   "auth": {
@@ -467,5 +468,37 @@
     "next": "Next",
     "back": "Back",
     "finish": "Get Started"
+  },
+  "reports": {
+    "section": "Reports",
+    "netWorth": "Net Worth",
+    "incomeExpenses": "Income vs Expenses",
+    "cashFlow": "Cash Flow",
+    "trend": "Trend",
+    "composition": "Composition",
+    "categoryTrends": "Category Trends",
+    "evolution": "Evolution",
+    "noData": "No data for the selected period.",
+    "comingSoon": "Coming soon",
+    "vsStart": "vs. start of period",
+    "income": "Income",
+    "expenses": "Expenses",
+    "netIncome": "Net Income",
+    "accounts": "Accounts",
+    "assets": "Assets",
+    "liabilities": "Liabilities",
+    "summary": "Summary",
+    "detailed": "Detailed",
+    "byIncome": "Income",
+    "byExpenses": "Expenses",
+    "uncategorized": "Uncategorized",
+    "other": "Other",
+    "range6m": "6M",
+    "range1y": "1Y",
+    "range2y": "2Y",
+    "intervalDaily": "Day",
+    "intervalWeekly": "Wk",
+    "intervalMonthly": "Mo",
+    "intervalYearly": "Yr"
   }
 }

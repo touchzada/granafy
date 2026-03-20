@@ -20,7 +20,7 @@ class Transaction(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
-    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Provider's transaction ID
     description: Mapped[str] = mapped_column(String(500))
@@ -33,6 +33,8 @@ class Transaction(Base):
     payee: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    merchant_cnpj: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    merchant_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     import_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("import_logs.id"), nullable=True)
     transfer_pair_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

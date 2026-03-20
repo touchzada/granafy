@@ -46,6 +46,8 @@ class TransactionRead(TransactionBase):
     notes: Optional[str] = None
     transfer_pair_id: Optional[uuid.UUID] = None
     installments: Optional[str] = None
+    merchant_cnpj: Optional[str] = None
+    merchant_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

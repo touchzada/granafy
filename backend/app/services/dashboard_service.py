@@ -620,20 +620,36 @@ async def get_spending_heatmap(
     # Calculate start date ~6 months ago, first day of that month
     start_date = (today.replace(day=1) - timedelta(days=months * 30)).replace(day=1)
     
+    from app.services.rule_service import PLUGGY_CATEGORY_MAP
+    
+    # Identify Income/Transfer categories to exclude from "Spending"
+    exclude_categories = ["Salário", "Investimentos"]
+    
     result = await session.execute(
         select(
             func.date(Transaction.date),
-            func.sum(Transaction.amount)
+            func.sum(
+                case(
+                    (Transaction.type == "debit", Transaction.amount),
+                    (Transaction.type == "credit", -Transaction.amount),
+                    else_=0
+                )
+            )
         )
         .join(Account, Transaction.account_id == Account.id)
+        .join(Category, Transaction.category_id == Category.id, isouter=True)
         .where(
             Transaction.user_id == user_id,
-            Account.is_closed == False,
-            Transaction.type == "debit",
+            # We removed Account.is_closed == False to preserve history in the heatmap
             Transaction.date >= start_date,
             Transaction.date <= today,
             Transaction.source != "opening_balance",
             Transaction.transfer_pair_id.is_(None),
+            # Exclude income/transfer categories from spending heatmap
+            or_(
+                Category.id.is_(None),  # Uncategorized is still spending
+                ~Category.name.in_(exclude_categories)
+            )
         )
         .group_by(func.date(Transaction.date))
         .order_by(func.date(Transaction.date))

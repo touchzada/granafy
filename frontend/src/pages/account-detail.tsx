@@ -320,7 +320,7 @@ export default function AccountDetailPage() {
                 />
                 <Tooltip
                   formatter={(value) => [
-                    value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), currency, locale)) : '\u2014',
+                    value !== null ? (privacyMode !== 'visible' ? MASK : formatCurrency(Number(value), currency, locale)) : '\u2014',
                     t('accounts.currentBalance'),
                   ]}
                   labelFormatter={(label) => label}

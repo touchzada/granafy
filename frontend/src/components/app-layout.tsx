@@ -41,6 +41,7 @@ import {
   Undo2,
   GripVertical,
   Target,
+  BarChart3,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import {
@@ -71,6 +72,7 @@ const navItems = [
   { key: 'budgets', path: '/budgets', icon: PiggyBank },
   { key: 'assets', path: '/assets', icon: Landmark },
   { key: 'goals', path: '/goals', icon: Target },
+  { key: 'reports', path: '/reports', icon: BarChart3 },
   { key: 'recurring', path: '/recurring', icon: Repeat },
   { key: 'rules', path: '/rules', icon: SlidersHorizontal },
   { key: 'import', path: '/import', icon: Upload },
@@ -132,9 +134,9 @@ export function AppLayout() {
           <button
             onClick={togglePrivacyMode}
             className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
-            title={privacyMode ? t('privacy.show') : t('privacy.hide')}
+            title={privacyMode !== 'visible' ? t('privacy.show') : t('privacy.hide')}
           >
-            {privacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
+            {privacyMode !== 'visible' ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
           <UserMenu userInitial={userInitial} logout={logout} dark />
         </div>
@@ -157,17 +159,17 @@ export function AppLayout() {
           )}
         >
           {/* Logo */}
-          <div className="flex h-16 items-center justify-between px-5 border-b border-sidebar-border">
+          <div className="flex h-16 items-center justify-between px-5 border-b border-sidebar-border shrink-0">
             <div className="flex items-center gap-2.5">
               <ShellLogo size={24} className="text-primary shrink-0" />
-              <span className="font-bold text-lg text-sidebar-foreground tracking-tight">{t('app.name')}</span>
+              <span className="font-bold text-lg text-sidebar-foreground tracking-tight shrink-0">{t('app.name')}</span>
             </div>
             <button
               onClick={togglePrivacyMode}
               className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent"
-              title={privacyMode ? t('privacy.show') : t('privacy.hide')}
+              title={privacyMode !== 'visible' ? t('privacy.show') : t('privacy.hide')}
             >
-              {privacyMode ? <EyeOff size={16} /> : <Eye size={16} />}
+              {privacyMode !== 'visible' ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
 
@@ -333,7 +335,7 @@ function UserMenu({ userInitial, logout, dark }: { userInitial: string; logout: 
 
 function SidebarAccounts({ accounts, locale, setSidebarOpen, mask, formatCurrency, blurClass }: any) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({})
   const queryClient = useQueryClient()
@@ -409,7 +411,7 @@ function SidebarAccounts({ accounts, locale, setSidebarOpen, mask, formatCurrenc
     }
   }
 
-  const isGroupExpanded = (groupId: string) => expandedGroups[groupId] !== false
+  const isGroupExpanded = (groupId: string) => expandedGroups[groupId] === true
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroups(prev => ({ ...prev, [groupId]: !isGroupExpanded(groupId) }))
@@ -638,6 +640,11 @@ function EditableAccountLink({ acc, balance, isCreditCard, setSidebarOpen, mask,
             title="Duplo clique para editar o nome"
           >
             <span className="truncate">{acc.custom_name || acc.name}</span>
+            {isCreditCard && acc.credit_level && (
+              <span className="ml-1.5 px-1 py-[1px] rounded-[3px] text-[7px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+                {acc.credit_level}
+              </span>
+            )}
             {isCreditCard && acc.account_number && (
               <span className="text-[9px] tabular-nums font-mono text-sidebar-muted/80 bg-sidebar-accent/50 px-1 py-0.5 rounded border border-sidebar-border/50 shrink-0">
                 •••• {acc.account_number}

@@ -43,6 +43,9 @@ class AccountRead(AccountBase):
     previous_balance: Optional[float] = None
     is_closed: bool = False
     closed_at: Optional[datetime] = None
+    balance_close_date: Optional[date] = None
+    balance_due_date: Optional[date] = None
+    credit_level: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

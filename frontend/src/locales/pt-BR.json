@@ -14,6 +14,7 @@
     "recurring": "Recorrentes",
     "assets": "Patrimônio",
     "goals": "Metas",
+    "reports": "Relatórios",
     "advisor": "Conselheiro IA"
   },
   "auth": {
@@ -468,5 +469,37 @@
     "next": "Próximo",
     "back": "Voltar",
     "finish": "Começar"
+  },
+  "reports": {
+    "section": "Relatórios",
+    "netWorth": "Patrimônio Líquido",
+    "incomeExpenses": "Receitas vs Despesas",
+    "cashFlow": "Fluxo de Caixa",
+    "trend": "Evolução",
+    "composition": "Composição",
+    "categoryTrends": "Tendência por Categoria",
+    "evolution": "Evolução",
+    "noData": "Sem dados para o período selecionado.",
+    "comingSoon": "Em breve",
+    "vsStart": "vs. início do período",
+    "income": "Receitas",
+    "expenses": "Despesas",
+    "netIncome": "Resultado Líquido",
+    "accounts": "Contas",
+    "assets": "Ativos",
+    "liabilities": "Passivos",
+    "summary": "Resumo",
+    "detailed": "Detalhado",
+    "byIncome": "Receitas",
+    "byExpenses": "Despesas",
+    "uncategorized": "Sem Categoria",
+    "other": "Outros",
+    "range6m": "6M",
+    "range1y": "1A",
+    "range2y": "2A",
+    "intervalDaily": "Dia",
+    "intervalWeekly": "Sem",
+    "intervalMonthly": "Mês",
+    "intervalYearly": "Ano"
   }
 }

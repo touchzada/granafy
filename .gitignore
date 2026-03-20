@@ -5,8 +5,12 @@
 .claude
 docs/plans/
 extrato/
-my-skills/
-.agent/
+#my-skills/
+#.agent/
 backups/
 redis/
 tools/
+backup.bat
+dump.rdb
+redis.zip
+start_all - Copia.bat
