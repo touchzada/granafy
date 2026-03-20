@@ -1,7 +1,6 @@
-'use client';
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 
 const MONTHS_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -30,24 +29,19 @@ export function DatePickerGranafy({ value, onChange, label, compact = false, ali
     const presetsLabel = isPt ? 'Atalhos' : 'Shortcuts';
 
     const [open, setOpen] = useState(false);
-    const ref = useRef<HTMLDivElement>(null);
     const parsed = value ? new Date(value + 'T00:00:00') : new Date();
     const [viewMonth, setViewMonth] = useState(parsed.getMonth());
     const [viewYear, setViewYear] = useState(parsed.getFullYear());
 
     useEffect(() => {
-        const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
-
-    useEffect(() => {
         if (value) {
             const d = new Date(value + 'T00:00:00');
-            setViewMonth(d.getMonth());
-            setViewYear(d.getFullYear());
+            if (open) { // Update view when value changes if open
+              setViewMonth(d.getMonth());
+              setViewYear(d.getFullYear());
+            }
         }
-    }, [value]);
+    }, [value, open]);
 
     const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
     const firstDow = new Date(viewYear, viewMonth, 1).getDay();
@@ -87,35 +81,36 @@ export function DatePickerGranafy({ value, onChange, label, compact = false, ali
     for (let i = 0; i < firstDow; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-    const alignmentClasses = {
-        left: 'left-0 origin-top-left',
-        right: 'right-0 origin-top-right',
-        center: 'left-1/2 -translate-x-1/2 origin-top'
-    }[alignPopover];
+    const alignMap = { left: 'start' as const, right: 'end' as const, center: 'center' as const };
 
     return (
-        <div ref={ref} className="relative">
-            <button
-                onClick={() => { if (!disabled) setOpen(!open) }}
-                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-all duration-300 cursor-pointer select-none border ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${open
-                    ? 'bg-card border-primary/50 text-foreground shadow-lg'
-                    : value
-                        ? 'bg-card/60 border-border text-foreground/80 hover:border-primary/40 hover:text-foreground'
-                        : 'bg-card/40 border-border text-muted-foreground hover:border-primary/40 hover:text-foreground/80'
-                    } ${compact ? 'w-full' : ''}`}
-            >
-                <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                {!compact && label && <span className="text-[11px] text-muted-foreground font-medium">{label}</span>}
-                <span className="font-medium tabular-nums flex-1 text-left">{displayDate}</span>
-            </button>
-
-            <div className={`absolute top-full mt-2 ${alignmentClasses} z-[70] transition-all duration-200 ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
-                }`}
-                onMouseDown={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button
+                    disabled={disabled}
+                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-all duration-300 cursor-pointer select-none border ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${open
+                        ? 'bg-card border-primary/50 text-foreground shadow-lg'
+                        : value
+                            ? 'bg-card/60 border-border text-foreground/80 hover:border-primary/40 hover:text-foreground'
+                            : 'bg-card/40 border-border text-muted-foreground hover:border-primary/40 hover:text-foreground/80'
+                        } ${compact ? 'w-full' : ''}`}
                 >
+                    <svg className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" />
+                    </svg>
+                    {!compact && label && <span className="text-[11px] text-muted-foreground font-medium">{label}</span>}
+                    <span className="font-medium tabular-nums flex-1 text-left">{displayDate}</span>
+                </button>
+            </PopoverTrigger>
+
+            <PopoverContent 
+                align={alignMap[alignPopover]} 
+                className="p-0 border-none bg-transparent shadow-none w-auto"
+                onInteractOutside={(e) => {
+                    // Critical: prevent interaction from propogating to Dialog outside-click handlers
+                    e.preventDefault();
+                }}
+            >
                 <div className="bg-popover/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl shadow-black/20 overflow-hidden flex">
                     {/* Presets sidebar */}
                     <div className="w-24 border-r border-border/60 py-3 px-2 flex flex-col gap-1">
@@ -175,7 +170,7 @@ export function DatePickerGranafy({ value, onChange, label, compact = false, ali
                         </button>
                     </div>
                 </div>
-            </div>
-        </div>
+            </PopoverContent>
+        </Popover>
     );
 }

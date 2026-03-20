@@ -63,16 +63,26 @@ function DialogContent({
           className
         )}
         onPointerDownOutside={(e) => {
-          // Prevent dialog from closing when clicking inside date pickers or other
-          // absolutely-positioned popovers that overflow the dialog bounds
           const target = e.target as Element
-          if (target.closest?.('[data-slot="dialog-content"]')) {
+          // Prevent dialog from closing when clicking inside date pickers, popovers,
+          // or other absolutely-positioned content that might be portaled or overflow bounds
+          if (
+            target.closest?.('[data-slot="dialog-content"]') ||
+            target.closest?.('[data-slot="popover-content"]') ||
+            target.closest?.('[data-radix-popper-content-wrapper]') ||
+            target.closest?.('.rdp')
+          ) {
             e.preventDefault()
           }
         }}
         onInteractOutside={(e) => {
           const target = e.target as Element
-          if (target.closest?.('[data-slot="dialog-content"]')) {
+          if (
+            target.closest?.('[data-slot="dialog-content"]') ||
+            target.closest?.('[data-slot="popover-content"]') ||
+            target.closest?.('[data-radix-popper-content-wrapper]') ||
+            target.closest?.('.rdp')
+          ) {
             e.preventDefault()
           }
         }}

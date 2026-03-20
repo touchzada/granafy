@@ -499,12 +499,21 @@ export default function DashboardPage() {
   const savingsRateDisplay = mask(`${savingsRate >= 0 ? '+' : ''}${savingsRate.toFixed(1)}%`)
   const savingsRateColor = savingsRate >= 20 ? 'text-emerald-500' : savingsRate >= 0 ? 'text-amber-500' : 'text-rose-500'
 
+  const dashboardTitle = useMemo(() => {
+    const start = parseISO(fromDate)
+    const end = parseISO(toDate)
+    if (format(start, 'MMM yy') === format(end, 'MMM yy')) {
+      return format(start, 'MMMM yyyy', { locale: dateFnsLocale })
+    }
+    return `${format(start, 'MMM yy', { locale: dateFnsLocale })} - ${format(end, 'MMM yy', { locale: dateFnsLocale })}`
+  }, [fromDate, toDate, dateFnsLocale])
+
   return (
     <div>
       {/* Header */}
       <PageHeader
         section={greeting}
-        title={`${format(parseISO(fromDate), 'MMM yy', { locale: dateFnsLocale })} - ${format(parseISO(toDate), 'MMM yy', { locale: dateFnsLocale })}`}
+        title={dashboardTitle}
         action={
           <div className="flex items-center gap-2 bg-card border border-border rounded-xl p-1 shadow-sm">
             <DatePickerGranafy
